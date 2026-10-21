@@ -1,7 +1,7 @@
 // หน้าเพื่อนติ๊กรายการ (req 4) + สรุปยอดการโอน (req 3.5) + QR โอนเงิน
 // req 4.5: ไม่มี login — เลือกชื่อตัวเอง, แก้แทนคนอื่นได้ แต่ทุกการแก้ถูกบันทึกและแสดงให้ทุกคนเห็น
 import { api, baht, baht0, fmtShare, fmtPromptPay, esc, store, editKeyFor, toast, copyText, icons } from './common.js';
-import { computeBill, shareOf, checkSubtotal, maxShareFor, overCount, cleanMenuName, paidStatus } from './calc.js';
+import { computeBill, shareOf, checkSubtotal, maxShareFor, overCount, cleanMenuName, paidStatus, doneStatus } from './calc.js';
 
 const $ = (id) => document.getElementById(id);
 const billId = location.pathname.split('/')[2];
@@ -14,6 +14,7 @@ let pending = 0;
 let picking = false; // กำลังเลือกชื่อใหม่
 let sheetFor = null; // personId ที่เปิดแผ่น QR อยู่
 let wasClosed = null; // ไว้รู้ตอนคนจ่ายเพิ่งปิด/เปิดบิล
+let wasAllDone = null; // ไว้บอกคนจ่ายตอนทุกคนเพิ่งเลือกเสร็จครบ
 
 $('homeBtn').innerHTML = icons.back;
 $('editBtn').innerHTML = icons.edit;
@@ -43,6 +44,9 @@ async function load() {
       if (wasClosed === false && bill.closed && meId && meId !== bill.payerId) toast('ปิดบิลแล้ว โอนได้เลย');
       if (wasClosed === true && !bill.closed) closeSheet();
       wasClosed = bill.closed;
+      const allDone = doneStatus(bill).all;
+      if (wasAllDone === false && allDone && !bill.closed && meId === bill.payerId) toast('ทุกคนเลือกเสร็จแล้ว ปิดบิลได้เลย');
+      wasAllDone = allDone;
       render();
     }
   } catch (e) {
@@ -105,6 +109,8 @@ function describe(e) {
       return self ? `${by} กิน ${item} ×${fmtShare(e.to)}` : `${by} ใส่ว่า <b>${who}</b> กิน ${item} ×${fmtShare(e.to)}`;
     case 'mode': return `${by} เลือก${self ? ' ' : ` ให้ <b>${who}</b> `}"${e.to === 'pick' ? 'กินบางอย่าง' : 'กินทุกอย่าง'}"`;
     case 'join': return `${by} เพิ่มชื่อตัวเองเข้าวง`;
+    case 'done': return self ? `${by} เลือกเสร็จแล้ว` : `${by} บอกว่า <b>${who}</b> เลือกเสร็จแล้ว`;
+    case 'undone': return self ? `${by} ขอแก้ต่อ` : `${by} ยกเลิก "เลือกเสร็จ" ของ <b>${who}</b>`;
     case 'paid': return self ? `${by} บอกว่าโอนแล้ว ฿${baht0(e.amount)}` : `${by} บอกว่าได้เงินจาก <b>${who}</b> แล้ว ฿${baht0(e.amount)}`;
     case 'unpaid': return self ? `${by} ยกเลิก "โอนแล้ว"` : `${by} ยกเลิก "โอนแล้ว" ของ <b>${who}</b>`;
     case 'items': return `${by} (คนจ่าย) แก้รายการในบิล`;
@@ -150,6 +156,7 @@ function render() {
   renderMe(r);
   renderWarnings(r);
   renderItems(r);
+  renderDone();
   renderSummary(r);
 }
 
@@ -210,7 +217,7 @@ function renderMe(r) {
       <div class="row" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
         <div>
           <div style="font-size:26px;font-weight:800;line-height:1.1">${esc(p.name)}</div>
-          <div class="stock" style="margin-top:6px">กิน ${eaten}/${bill.items.length} รายการ</div>
+          <div class="stock" style="margin-top:6px">กิน ${eaten}/${bill.items.length} รายการ${!bill.closed && bill.done?.[p.id] ? ' · เลือกเสร็จแล้ว ✓' : ''}</div>
         </div>
         <div class="seg" role="group" aria-label="กินแบบไหน">
           <button data-mode="normal" aria-pressed="${p.mode !== 'pick'}">กินทุกอย่าง</button>
@@ -224,6 +231,7 @@ function renderMe(r) {
         ? `<div class="wait-note">รอ${esc(nameOf(bill.payerId))}ปิดบิลก่อน ถึงจะโอนได้ ยอดยังเปลี่ยนได้ถ้ามีคนแก้</div>`
         : myTransfer(r, p))
         : ''}
+      ${isPayer && !bill.closed ? doneProgress() : ''}
       ${isPayer && editKey && !bill.closed
         ? `<button class="btn block" data-close-bill style="margin-top:16px">${icons.lock}<span>ปิดบิล ให้เพื่อนโอน</span></button>
            <div class="muted small" style="margin-top:8px">ปิดแล้วจะแก้รายการไม่ได้ เปิดใหม่ได้ทีหลัง</div>` : ''}
@@ -318,6 +326,31 @@ $('itemList').addEventListener('click', (e) => {
   setShare(id, meId, next);
 });
 
+function renderDone() {
+  const box = $('doneBox');
+  if (bill.closed) { box.innerHTML = ''; return; }
+  box.innerHTML = bill.done?.[meId]
+    ? `<div class="done-card is-done"><div><b>เลือกเสร็จแล้ว ✓</b><div class="small">แก้ต่อได้จนกว่า${esc(nameOf(bill.payerId))}จะปิดบิล</div></div><button class="link-ink" data-done="0">ขอแก้ต่อ</button></div>`
+    : `<div class="done-card"><button class="btn yellow block" data-done="1">เลือกเสร็จแล้ว</button><div class="small muted" style="margin-top:8px;text-align:center">กดเมื่อติ๊กครบ ${esc(nameOf(bill.payerId))}จะได้รู้</div></div>`;
+}
+$('doneBox').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-done]');
+  if (!b) return;
+  const done = b.dataset.done === '1';
+  mutate('done', { personId: meId, done }, () => {
+    bill.done = { ...(bill.done || {}) };
+    if (done) bill.done[meId] = new Date().toISOString(); else delete bill.done[meId];
+  });
+  if (done) toast(`บอก${nameOf(bill.payerId)}แล้วว่าเลือกเสร็จ`);
+});
+
+/** ความคืบหน้าของวง (ให้คนจ่ายดู) */
+function doneProgress() {
+  const st = doneStatus(bill);
+  if (st.all) return '<div class="done-progress all"><b>ทุกคนเลือกเสร็จแล้ว</b> ปิดบิลได้เลย</div>';
+  return `<div class="done-progress"><b>เลือกเสร็จแล้ว ${st.done.length}/${bill.people.length} คน</b><div class="small">รอ: ${st.waiting.map((p) => esc(p.name)).join(', ')}</div></div>`;
+}
+
 function renderSummary(r) {
   const payer = bill.payerId;
   const incoming = r.transfers.reduce((s, t) => s + t.amount, 0);
@@ -332,7 +365,7 @@ function renderSummary(r) {
       <details class="person-row${p.id === meId ? ' me' : ''}" style="display:block">
         <summary style="display:flex;align-items:center;gap:12px;cursor:pointer;list-style:none">
           <span class="avatar">${esc([...p.name.replace(/^[เแโใไ]/, '')][0] || '?')}</span>
-          <span class="who"><b>${esc(p.name)}</b><span class="muted small">${p.id === payer ? 'คนจ่าย · ไม่ต้องโอน' : bill.closed ? paidPill(r, p.id) : `โอนให้ ${esc(nameOf(payer))}`}</span></span>
+          <span class="who"><b>${esc(p.name)}</b><span class="muted small">${p.id === payer ? 'คนจ่าย · ไม่ต้องโอน' : bill.closed ? paidPill(r, p.id) : `โอนให้ ${esc(nameOf(payer))}`}${bill.closed ? '' : ` ${bill.done?.[p.id] ? '<span class="paid-pill">เลือกเสร็จ</span>' : '<span class="paid-pill no">ยังเลือกอยู่</span>'}`}</span></span>
           <span class="pay price">฿${baht0(pp.pay)}<small>${baht(pp.exact)}</small></span>
         </summary>
         <div style="margin-top:12px;display:grid;gap:4px;color:var(--muted)">${lines || '<span class="small">ไม่ได้กินอะไรเลย</span>'}</div>
@@ -401,6 +434,8 @@ async function toggleClosed() {
     // ระบบไม่ตัดสินแทน (req 4.3) แต่เตือนให้ชัดก่อนปิด
     const r = computeBill(bill);
     const issues = [];
+    const waiting = doneStatus(bill).waiting.filter((x) => x.id !== bill.payerId);
+    if (waiting.length) issues.push(`${waiting.map((x) => x.name).join(', ')} ยังไม่กดเลือกเสร็จ`);
     if (r.unassigned.length) issues.push(`ยังมี ${r.unassigned.map((u) => u.item.name).join(', ')} ที่ไม่มีใครกิน (${baht(r.unassignedTotal)} บาท) ถ้าปิดตอนนี้ คุณต้องจ่ายส่วนนี้เอง`);
     if (r.overItems.length) issues.push(`${r.overItems.map((it) => it.name).join(', ')} ใส่จำนวนรวมเกินที่สั่ง ยอดแต่ละคนอาจยังไม่ตรงกับที่กินจริง`);
     if (issues.length && !confirm(`${issues.join('\n\n')}\n\nปิดบิลเลยไหม?`)) return;

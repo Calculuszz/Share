@@ -9,7 +9,7 @@ process.env.DATA_DIR = await mkdtemp(path.join(os.tmpdir(), 'hkl-'));
 delete process.env.VERCEL;
 delete process.env.KV_REST_API_URL;
 const { handleApi } = await import('../lib/app.js');
-const { computeBill, paidStatus } = await import('../public/calc.js');
+const { computeBill, paidStatus, doneStatus } = await import('../public/calc.js');
 
 // เรียก API ตรง ๆ ด้วย req/res จำลอง
 async function call(method, p, body, key) {
@@ -38,6 +38,24 @@ test('เพื่อนเพิ่มชื่อตัวเองได้ �
   assert.equal((await call('POST', `/api/bills/${id}/people`, { name: '  ' })).status, 400);
 });
 
+test('เลือกเสร็จแล้ว: กด/ยกเลิกได้ บันทึกประวัติ และนับว่ารอใครอยู่', async () => {
+  let bill = (await call('GET', `/api/bills/${id}`)).data.bill;
+  const b = bill.people.find((p) => p.name === 'บี').id;
+  assert.deepEqual(doneStatus(bill).done.map((p) => p.name), []);
+  let r = await call('PATCH', `/api/bills/${id}/done`, { personId: b, done: true, actorId: b });
+  assert.equal(r.status, 200);
+  bill = r.data.bill;
+  assert.deepEqual(doneStatus(bill).done.map((p) => p.name), ['บี']);
+  assert.deepEqual(doneStatus(bill).waiting.map((p) => p.name), ['เอ']);
+  assert.equal(bill.log.at(-1).kind, 'done');
+  r = await call('PATCH', `/api/bills/${id}/done`, { personId: 'payerAAA', done: true, actorId: 'payerAAA' });
+  assert.equal(doneStatus(r.data.bill).all, true);
+  r = await call('PATCH', `/api/bills/${id}/done`, { personId: b, done: false, actorId: b });
+  assert.equal(doneStatus(r.data.bill).all, false);
+  assert.equal(r.data.bill.log.at(-1).kind, 'undone');
+  await call('PATCH', `/api/bills/${id}/done`, { personId: b, done: true, actorId: b });
+});
+
 test('คนจ่ายบันทึกหน้าแก้บิล (ที่เปิดไว้ก่อนเพื่อนเข้ามา) ไม่ลบชื่อเพื่อน', async () => {
   const before = (await call('GET', `/api/bills/${id}`)).data.bill;
   const known = before.people.map((p) => p.id); // เอ, บี
@@ -48,6 +66,7 @@ test('คนจ่ายบันทึกหน้าแก้บิล (ที
   }, key);
   assert.equal(put.status, 200);
   assert.deepEqual(put.data.bill.people.map((p) => p.name), ['เอ', 'ซี']);
+  assert.deepEqual(Object.keys(put.data.bill.done), ['payerAAA']);
 });
 
 test('โอนแล้ว: ได้หลังปิดบิล, จำยอดไว้, ยอดเพิ่มทีหลังรู้ว่าขาด', async () => {

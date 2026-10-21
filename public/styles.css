@@ -427,4 +427,14 @@ hr.sep { border: 0; border-top: 1px solid rgba(0, 0, 0, .12); margin: 16px 0; }
   display: flex; justify-content: space-between; align-items: center; gap: 10px; font-weight: 600;
 }
 .btn.ghost-ink { background: rgba(0, 0, 0, .12); color: var(--ink); }
+.done-card { margin-top: 16px; }
+.done-card.is-done {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 14px 16px; border-radius: var(--radius-md);
+  background: rgba(61, 220, 132, .1); border-left: 3px solid var(--ok);
+}
+.done-card.is-done .small { color: var(--muted); }
+.done-card.is-done .link-ink { color: var(--text); flex: none; }
+.done-progress { margin-top: 16px; padding: 12px 14px; border-radius: 12px; background: rgba(0, 0, 0, .1); }
+.done-progress .small { opacity: .8; }
 .link-ink { font-size: 14px; font-weight: 500; text-decoration: underline; color: inherit; }

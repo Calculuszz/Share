@@ -123,6 +123,14 @@ export function paidStatus(bill, result, personId) {
   return { paid: short === 0, pay, at: mark.at, amount: mark.amount, short };
 }
 
+/** ใครกด "เลือกเสร็จแล้ว" แล้ว ใครยังไม่กด */
+export function doneStatus(bill) {
+  const people = bill.people || [];
+  const done = people.filter((p) => bill.done?.[p.id]);
+  const waiting = people.filter((p) => !bill.done?.[p.id]);
+  return { done, waiting, all: people.length > 0 && waiting.length === 0 };
+}
+
 /** เทียบผลรวมรายการกับ Subtotal ในบิล (req 5.2) — ห้ามปรับให้ตรงเอง แค่รายงานส่วนต่าง */
 export function checkSubtotal(items, subtotal) {
   const sum = itemsTotal(items);
