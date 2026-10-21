@@ -42,7 +42,10 @@ async function load() {
     if (!bill || r.bill.version !== bill.version) {
       bill = tidy(r.bill);
       if (wasClosed === false && bill.closed && meId && meId !== bill.payerId) toast('ปิดบิลแล้ว โอนได้เลย');
-      if (wasClosed === true && !bill.closed) closeSheet();
+      if (wasClosed === true && !bill.closed) {
+        closeSheet();
+        if (meId && meId !== bill.payerId) toast(`${nameOf(bill.payerId)}ยกเลิกปิดบิล แก้รายการได้อีกครั้ง`);
+      }
       wasClosed = bill.closed;
       const allDone = doneStatus(bill).all;
       if (wasAllDone === false && allDone && !bill.closed && meId === bill.payerId) toast('ทุกคนเลือกเสร็จแล้ว ปิดบิลได้เลย');
@@ -234,7 +237,10 @@ function renderMe(r) {
       ${isPayer && !bill.closed ? doneProgress() : ''}
       ${isPayer && editKey && !bill.closed
         ? `<button class="btn block" data-close-bill style="margin-top:16px">${icons.lock}<span>ปิดบิล ให้เพื่อนโอน</span></button>
-           <div class="muted small" style="margin-top:8px">ปิดแล้วจะแก้รายการไม่ได้ เปิดใหม่ได้ทีหลัง</div>` : ''}
+           <div class="muted small" style="margin-top:8px">ปิดแล้วจะแก้รายการไม่ได้ ยกเลิกได้ทีหลัง</div>` : ''}
+      ${isPayer && editKey && bill.closed
+        ? `<button class="btn block ghost-ink" data-close-bill style="margin-top:16px">${icons.lock}<span>ยกเลิกปิดบิล</span></button>
+           <div class="muted small" style="margin-top:8px">ยกเลิกแล้วทุกคนแก้รายการได้อีกครั้ง และยังโอนไม่ได้จนกว่าจะปิดใหม่</div>` : ''}
       ${isPayer && !hasPayment() && editKey
         ? `<a class="btn block" href="/edit/${billId}" style="margin-top:16px">${icons.qr}<span>เพิ่ม QR รับเงิน</span></a>` : ''}
     </section>`;
@@ -398,7 +404,7 @@ function renderSummary(r) {
       <div class="section-title"><h2>เฉพาะคนจ่าย</h2></div>
       <div style="display:flex;gap:10px">
         <a class="btn ghost sm" href="/edit/${billId}" style="flex:1">${icons.edit}<span>แก้รายการ / QR</span></a>
-        <button class="btn ${bill.closed ? 'yellow' : 'ghost'} sm" id="closeBtn" style="flex:1">${icons.lock}<span>${bill.closed ? 'เปิดบิลให้แก้ต่อ' : 'ปิดบิล'}</span></button>
+        <button class="btn ${bill.closed ? 'yellow' : 'ghost'} sm" id="closeBtn" style="flex:1">${icons.lock}<span>${bill.closed ? 'ยกเลิกปิดบิล' : 'ปิดบิล'}</span></button>
       </div>` : ''}`;
 }
 
@@ -431,12 +437,18 @@ async function toggleClosed() {
     if (waiting.length) issues.push(`${waiting.map((x) => x.name).join(', ')} ยังไม่กดเลือกเสร็จ`);
     if (r.unassigned.length) issues.push(`ยังมี ${r.unassigned.map((u) => u.item.name).join(', ')} ที่ไม่มีใครกิน (${baht(r.unassignedTotal)} บาท) ถ้าปิดตอนนี้ คุณต้องจ่ายส่วนนี้เอง`);
     if (issues.length && !confirm(`${issues.join('\n\n')}\n\nปิดบิลเลยไหม?`)) return;
+  } else {
+    const paidNames = bill.people.filter((p) => bill.paid?.[p.id]).map((p) => p.name);
+    const msg = paidNames.length
+      ? `${paidNames.join(', ')} โอนแล้ว ถ้าแก้แล้วยอดเพิ่ม เขาจะเห็นว่าต้องโอนเพิ่มอีกเท่าไร\n\nยกเลิกปิดบิลไหม?`
+      : 'ยกเลิกปิดบิล ให้ทุกคนแก้รายการได้อีกครั้งไหม?';
+    if (!confirm(msg)) return;
   }
   try {
     const r = await api(`bills/${billId}/closed`, { method: 'PUT', body: { closed: closing }, key: editKey });
     bill = tidy(r.bill);
     wasClosed = bill.closed;
-    toast(bill.closed ? 'ปิดบิลแล้ว เพื่อนโอนได้เลย' : 'เปิดบิลแล้ว แก้รายการต่อได้');
+    toast(bill.closed ? 'ปิดบิลแล้ว เพื่อนโอนได้เลย' : 'ยกเลิกปิดบิลแล้ว ทุกคนแก้รายการได้อีกครั้ง');
     render();
   } catch (err) { toast(err.message, true); }
 }
