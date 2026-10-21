@@ -14,6 +14,7 @@ let pending = 0;
 let picking = false; // กำลังเลือกชื่อใหม่
 const expanded = new Set(); // รายการที่เปิด "แก้รายชื่อ" อยู่
 let sheetFor = null; // personId ที่เปิดแผ่น QR อยู่
+let wasClosed = null; // ไว้รู้ตอนคนจ่ายเพิ่งปิด/เปิดบิล
 
 $('homeBtn').innerHTML = icons.back;
 $('editBtn').innerHTML = icons.edit;
@@ -38,7 +39,13 @@ function tidy(b) {
 async function load() {
   try {
     const r = await api(`bills/${billId}`);
-    if (!bill || r.bill.version !== bill.version) { bill = tidy(r.bill); render(); }
+    if (!bill || r.bill.version !== bill.version) {
+      bill = tidy(r.bill);
+      if (wasClosed === false && bill.closed && meId && meId !== bill.payerId) toast('ปิดบิลแล้ว โอนได้เลย');
+      if (wasClosed === true && !bill.closed) closeSheet();
+      wasClosed = bill.closed;
+      render();
+    }
   } catch (e) {
     if (!bill) {
       $('storeName').textContent = 'เปิดบิลไม่ได้';
@@ -182,7 +189,7 @@ function renderMe(r) {
         </div>
       </div></div>` : ''}
     <section class="card-yellow">
-      <div class="row" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+      <div class="row" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
         <div>
           <div style="font-size:26px;font-weight:800;line-height:1.1">${esc(p.name)}</div>
           <div class="stock" style="margin-top:6px">กิน ${eaten}/${bill.items.length} รายการ</div>
@@ -195,10 +202,15 @@ function renderMe(r) {
       <div class="muted small" style="margin-top:18px">${isPayer ? 'ส่วนของคุณ' : `โอนให้ ${esc(nameOf(bill.payerId))}`}</div>
       <div class="big-price">฿${baht0(mine.pay)}</div>
       ${isPayer ? `<div class="muted small">รอเพื่อนโอนคืน ฿${baht0(incoming)}</div>` : ''}
-      ${!isPayer && mine.pay > 0 ? (hasPayment()
-        ? `<button class="btn block" data-qr="${p.id}" style="margin-top:16px">${icons.qr}<span>QR โอนเงิน ฿${baht0(mine.pay)}</span></button>`
-        : `<div class="muted small" style="margin-top:12px">${esc(nameOf(bill.payerId))} ยังไม่ได้ใส่เลขบัญชี ถามในกลุ่มก่อนนะ</div>`)
+      ${!isPayer && mine.pay > 0 ? (!bill.closed
+        ? `<div class="wait-note">รอ${esc(nameOf(bill.payerId))}ปิดบิลก่อน ถึงจะโอนได้ ยอดยังเปลี่ยนได้ถ้ามีคนแก้</div>`
+        : hasPayment()
+          ? `<button class="btn block" data-qr="${p.id}" style="margin-top:16px">${icons.qr}<span>QR โอนเงิน ฿${baht0(mine.pay)}</span></button>`
+          : `<div class="muted small" style="margin-top:12px">${esc(nameOf(bill.payerId))} ยังไม่ได้ใส่เลขบัญชี ถามในกลุ่มก่อนนะ</div>`)
         : ''}
+      ${isPayer && editKey && !bill.closed
+        ? `<button class="btn block" data-close-bill style="margin-top:16px">${icons.lock}<span>ปิดบิล ให้เพื่อนโอน</span></button>
+           <div class="muted small" style="margin-top:8px">ปิดแล้วจะแก้รายการไม่ได้ เปิดใหม่ได้ทีหลัง</div>` : ''}
       ${isPayer && !hasPayment() && editKey
         ? `<a class="btn block" href="/edit/${billId}" style="margin-top:16px">${icons.qr}<span>เพิ่ม QR รับเงิน</span></a>` : ''}
     </section>`;
@@ -206,6 +218,7 @@ function renderMe(r) {
 $('meCard').addEventListener('click', (e) => {
   const mode = e.target.closest('[data-mode]');
   if (mode) setMode(mode.dataset.mode);
+  if (e.target.closest('[data-close-bill]')) toggleClosed();
   const ack = e.target.closest('[data-ack]');
   if (ack) { store.set(`seen:${billId}:${meId}`, ack.dataset.ack); render(); }
 });
@@ -309,7 +322,7 @@ function renderSummary(r) {
       const it = bill.items.find((x) => x.id === l.itemId);
       return `<div style="display:flex;justify-content:space-between;gap:8px" class="small"><span>${esc(it.name)}${l.share !== 1 ? ` ×${fmtShare(l.share)}` : ''}</span><span>${baht(l.amount)}</span></div>`;
     }).join('');
-    const canQr = p.id !== payer && pp.pay > 0 && hasPayment();
+    const canQr = bill.closed && p.id !== payer && pp.pay > 0 && hasPayment();
     return `
       <details class="person-row${p.id === meId ? ' me' : ''}" style="display:block">
         <summary style="display:flex;align-items:center;gap:12px;cursor:pointer;list-style:none">
@@ -364,24 +377,36 @@ $('summaryView').addEventListener('click', async (e) => {
       `โอนให้ ${nameOf(bill.payerId)}${pp ? ` พร้อมเพย์ ${fmtPromptPay(pp)}` : ''}${bill.payment?.name ? ` (${bill.payment.name})` : ''}`,
       ...r.transfers.map((t) => `• ${nameOf(t.from)} ${baht0(t.amount)} บาท`),
       ...(r.unassigned.length ? [`⚠ ยังไม่มีคนกิน: ${r.unassigned.map((u) => u.item.name).join(', ')} (${baht(r.unassignedTotal)} บาท)`] : []),
+      ...(bill.closed ? [] : ['(ยอดยังไม่สุดท้าย รอปิดบิลก่อนค่อยโอน)']),
       `ดูรายละเอียด/สแกน QR: ${location.href}`,
     ];
     toast((await copyText(lines.join('\n'))) ? 'คัดลอกสรุปแล้ว' : 'คัดลอกไม่ได้', false);
   }
-  if (e.target.closest('#closeBtn')) {
-    try {
-      const r = await api(`bills/${billId}/closed`, { method: 'PUT', body: { closed: !bill.closed }, key: editKey });
-      bill = tidy(r.bill);
-      toast(bill.closed ? 'ปิดบิลแล้ว' : 'เปิดบิลแล้ว');
-      render();
-    } catch (err) { toast(err.message, true); }
-  }
+  if (e.target.closest('#closeBtn')) toggleClosed();
 });
+
+async function toggleClosed() {
+  const closing = !bill.closed;
+  if (closing) {
+    // ระบบไม่ตัดสินแทน (req 4.3) แต่เตือนให้ชัดก่อนปิด
+    const r = computeBill(bill);
+    if (r.unassigned.length && !confirm(`ยังมี ${r.unassigned.map((u) => u.item.name).join(', ')} ที่ไม่มีใครกิน (${baht(r.unassignedTotal)} บาท)
+ถ้าปิดตอนนี้ คุณต้องจ่ายส่วนนี้เอง ปิดเลยไหม?`)) return;
+  }
+  try {
+    const r = await api(`bills/${billId}/closed`, { method: 'PUT', body: { closed: closing }, key: editKey });
+    bill = tidy(r.bill);
+    wasClosed = bill.closed;
+    toast(bill.closed ? 'ปิดบิลแล้ว เพื่อนโอนได้เลย' : 'เปิดบิลแล้ว แก้รายการต่อได้');
+    render();
+  } catch (err) { toast(err.message, true); }
+}
 
 // ---------- แผ่น QR โอนเงิน ----------
 let sheetKind = null; // 'promptpay' | 'image'
 
 function openSheet(personId) {
+  if (!bill.closed) return toast(`รอ${nameOf(bill.payerId)}ปิดบิลก่อนนะ`);
   sheetFor = personId;
   sheetKind = bill.payment?.promptpay ? 'promptpay' : 'image';
   const el = document.createElement('div');

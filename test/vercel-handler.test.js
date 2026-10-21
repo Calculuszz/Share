@@ -50,6 +50,11 @@ test('ทั้ง flow ผ่าน URL ที่ถูก rewrite', async () =
   const pay = await call(`/api/bills/${id}/payment`, { method: 'PUT', headers: { 'X-Edit-Key': key }, body: { promptpay: '0812345678' } });
   assert.equal(pay.status, 200);
 
+  // ยังไม่ปิดบิล → ยังโอนไม่ได้
+  const early = await call(`/api/bills/${id}/promptpay/bbbbbbbb`);
+  assert.equal(early.status, 409);
+  assert.equal(early.data.error, 'รอคนจ่ายปิดบิลก่อนถึงจะโอนได้');
+  assert.equal((await call(`/api/bills/${id}/closed`, { method: 'PUT', headers: { 'X-Edit-Key': key }, body: { closed: true } })).status, 200);
   const svg = await call(`/api/bills/${id}/promptpay/bbbbbbbb`);
   assert.equal(svg.status, 200);
   assert.match(svg.type, /svg/);
