@@ -12,7 +12,6 @@ let meId = store.get(`me:${billId}`);
 let tab = 'items';
 let pending = 0;
 let picking = false; // กำลังเลือกชื่อใหม่
-const expanded = new Set(); // รายการที่เปิด "แก้รายชื่อ" อยู่
 let sheetFor = null; // personId ที่เปิดแผ่น QR อยู่
 let wasClosed = null; // ไว้รู้ตอนคนจ่ายเพิ่งปิด/เปิดบิล
 
@@ -266,54 +265,42 @@ function renderItems(r) {
   const p = me();
   const locked = bill.closed;
   const log = bill.log || [];
-  // รายการแบบย่อ: แถวละเมนู แตะทั้งแถวเพื่อสลับ กิน/ไม่กิน — รายละเอียดอยู่ในปุ่ม ⌄
+  // แถวละเมนู: แตะทั้งแถวเพื่อสลับ กิน/ไม่กิน; สั่งมากกว่า 1 และกินอยู่ → มีปุ่มจำนวนใต้แถวเลย
   $('itemList').innerHTML = r.itemRows.map(({ item, shareSum, unassigned, over }) => {
     const mine = shareOf(item, p);
     const inIt = mine > 0;
     const myAmount = inIt ? item.total * (mine / shareSum) : 0;
-    const eaters = bill.people.map((x) => [x, shareOf(item, x)]).filter(([, v]) => v > 0);
-    const canCount = inIt && (item.qty > 1 || mine !== 1);
+    const eaters = bill.people.filter((x) => shareOf(item, x) > 0).length;
+    const canCount = inIt && item.qty > 1;
     const max = maxShareFor(item);
     const lastOther = log.findLast((e) => e.item === item.id && onBehalf(e));
-    const open = expanded.has(item.id);
     const sub = unassigned
       ? '<span class="warn-text">ยังไม่มีใครกิน</span>'
       : over
         ? `<span class="warn-text">ใส่รวม ${fmtShare(shareSum)} จาก ${fmtShare(item.qty)} มีคนต้องลด</span>`
         : inIt
-          ? `คุณ ${baht(myAmount)}${mine > 1 ? ` (×${fmtShare(mine)})` : ''} · หาร ${eaters.length} คน`
-          : `${eaters.length} คนกิน`;
+          ? `คุณ ${baht(myAmount)} · หาร ${eaters} คน`
+          : `${eaters} คนกิน`;
     return `
       <article class="line${inIt ? ' in' : ''}${unassigned || over ? ' warn' : ''}" data-id="${item.id}">
-        <div class="line-row">
-          <button class="line-main" data-act="toggle" aria-pressed="${inIt}" ${locked ? 'disabled' : ''}
-            aria-label="${esc(item.name)} ${inIt ? 'กินอยู่ แตะเพื่อเอาชื่อออก' : 'ไม่ได้กิน แตะเพื่อกินด้วย'}">
-            <span class="check" aria-hidden="true"></span>
-            <span class="qty-tag">×${fmtShare(item.qty)}</span>
-            <span class="line-text">
-              <span class="name">${esc(item.name)}</span>
-              <span class="sub">${sub}${lastOther ? ` · ✎ ${esc(nameOf(lastOther.by))}แก้` : ''}</span>
-            </span>
-            <span class="price">฿${baht0(item.total)}</span>
-          </button>
-          <button class="line-more" data-act="more" aria-expanded="${open}" aria-label="รายละเอียด ${esc(item.name)}">${icons.chevron}</button>
-        </div>
-        ${open ? `
-          <div class="line-detail">
-            ${canCount ? `
-              <div class="count-row">
-                <span>กินกี่จาน กดเท่านั้น</span>
-                <div class="stepper sm" role="group" aria-label="คุณกินกี่จาน">
-                  <button data-act="dec" aria-label="ลด" ${locked || mine <= 1 ? 'disabled' : ''}>–</button>
-                  <output>${fmtShare(mine)}</output>
-                  <button data-act="inc" aria-label="เพิ่ม" ${locked || mine >= max ? 'disabled' : ''}>+</button>
-                </div>
-              </div>` : ''}
-            <div class="small" style="margin:4px 0 6px;opacity:.8">ใครกินบ้าง แตะชื่อเพื่อใส่หรือเอาออก</div>
-            <div class="who-edit" role="group" aria-label="ใครกิน ${esc(item.name)}">
-              ${bill.people.map((x) => { const v = shareOf(item, x); return `<button class="chip" data-person="${x.id}" aria-pressed="${v > 0}" ${locked ? 'disabled' : ''}>${esc(x.name)}${v > 1 ? ` ×${fmtShare(v)}` : ''}</button>`; }).join('')}
+        <button class="line-main" data-act="toggle" aria-pressed="${inIt}" ${locked ? 'disabled' : ''}
+          aria-label="${esc(item.name)} ${inIt ? 'กินอยู่ แตะเพื่อเอาชื่อออก' : 'ไม่ได้กิน แตะเพื่อกินด้วย'}">
+          <span class="check" aria-hidden="true"></span>
+          <span class="qty-tag">×${fmtShare(item.qty)}</span>
+          <span class="line-text">
+            <span class="name">${esc(item.name)}</span>
+            <span class="sub">${sub}${lastOther ? ` · ✎ ${esc(nameOf(lastOther.by))}แก้` : ''}</span>
+          </span>
+          <span class="price">฿${baht0(item.total)}</span>
+        </button>
+        ${canCount ? `
+          <div class="count-row">
+            <span>กินกี่จาน</span>
+            <div class="stepper sm" role="group" aria-label="${esc(item.name)} กินกี่จาน">
+              <button data-act="dec" aria-label="ลด" ${locked || mine <= 1 ? 'disabled' : ''}>–</button>
+              <output>${fmtShare(mine)}</output>
+              <button data-act="inc" aria-label="เพิ่ม" ${locked || mine >= max ? 'disabled' : ''}>+</button>
             </div>
-            ${lastOther ? `<div class="edited-by">✎ ${hhmm(lastOther.at)} ${describe(lastOther)}</div>` : ''}
           </div>` : ''}
       </article>`;
   }).join('') || '<div class="empty">ยังไม่มีรายการในบิล</div>';
@@ -321,22 +308,10 @@ function renderItems(r) {
 
 $('itemList').addEventListener('click', (e) => {
   const row = e.target.closest('[data-id]');
-  if (!row) return;
+  const b = e.target.closest('[data-act]');
+  if (!row || !b || b.disabled) return;
   const id = row.dataset.id;
   const item = bill.items.find((it) => it.id === id);
-
-  const person = e.target.closest('[data-person]');
-  if (person && !person.disabled) {
-    const p = bill.people.find((x) => x.id === person.dataset.person);
-    return setShare(id, p.id, shareOf(item, p) > 0 ? 0 : 1);
-  }
-
-  const b = e.target.closest('[data-act]');
-  if (!b || b.disabled) return;
-  if (b.dataset.act === 'more') {
-    if (expanded.has(id)) expanded.delete(id); else expanded.add(id);
-    return render();
-  }
   const cur = shareOf(item, me());
   const next = { toggle: cur > 0 ? 0 : 1, inc: Math.min(cur + 1, maxShareFor(item)), dec: Math.max(1, cur - 1) }[b.dataset.act];
   if (next === undefined || next === cur) return;

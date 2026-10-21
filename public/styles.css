@@ -386,10 +386,9 @@ hr.sep { border: 0; border-top: 1px solid rgba(0, 0, 0, .12); margin: 16px 0; }
 }
 .line.in { background: #2c2a1f; border-color: rgba(245, 191, 0, .35); }
 .line.warn { border-color: var(--danger); }
-.line-row { display: flex; align-items: stretch; }
 .line-main {
-  flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px;
-  padding: 12px 6px 12px 12px; text-align: left; color: var(--text);
+  width: 100%; min-width: 0; display: flex; align-items: center; gap: 10px;
+  padding: 12px; text-align: left; color: var(--text);
 }
 .line-main[disabled] { cursor: default; }
 .line .check {
@@ -411,16 +410,10 @@ hr.sep { border: 0; border-top: 1px solid rgba(0, 0, 0, .12); margin: 16px 0; }
 .warn-text { color: var(--danger); font-weight: 600; }
 .line .price { flex: none; font-weight: 700; font-variant-numeric: tabular-nums; }
 .line:not(.in) .price { color: var(--muted); }
-.line-more {
-  flex: none; width: 44px; display: grid; place-items: center; color: var(--muted);
-  border-left: 1px solid rgba(255, 255, 255, .06);
+.count-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 0 12px 12px 46px; font-size: 14px; color: #e8d48a;
 }
-.line-more svg { width: 20px; height: 20px; transition: transform .15s; }
-.line-more[aria-expanded="true"] svg { transform: rotate(180deg); }
-.line-detail { padding: 4px 12px 14px; border-top: 1px solid rgba(255, 255, 255, .06); }
-.count-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 10px 0 8px; font-size: 14px; }
-.line .who-edit { margin-top: 0; }
-.line .who-edit .chip[aria-pressed="true"] { background: var(--yellow); color: var(--ink); }
 
 /* ---------- โอนแล้ว ---------- */
 .paid-pill {
