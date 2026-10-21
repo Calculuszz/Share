@@ -10,7 +10,8 @@ export async function api(path, { method = 'GET', body, key } = {}) {
   let data = {};
   try { data = await res.json(); } catch { /* ว่าง */ }
   if (!res.ok) {
-    const err = new Error(data.error || `เกิดข้อผิดพลาด (${res.status})`);
+    const fallback = res.status === 413 ? 'รูปใหญ่เกินไป ลองรูปที่เล็กลง' : 'มีอะไรผิดพลาด ลองใหม่อีกครั้ง';
+    const err = new Error(data.error || fallback);
     err.status = res.status;
     throw err;
   }
@@ -67,7 +68,7 @@ export function toast(msg, isError = false) {
 }
 
 /** ย่อรูปก่อนส่ง (ด้านยาวสุด 2000px) ให้อัปโหลดเร็ว แต่ยังอ่านตัวเลขได้ */
-export async function prepareImage(file, maxSide = 2000, type = 'image/jpeg') {
+export async function prepareImage(file, maxSide = 2000, type = 'image/jpeg', quality = 0.88) {
   try {
     const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
     const scale = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
@@ -75,7 +76,7 @@ export async function prepareImage(file, maxSide = 2000, type = 'image/jpeg') {
     canvas.width = Math.round(bmp.width * scale);
     canvas.height = Math.round(bmp.height * scale);
     canvas.getContext('2d').drawImage(bmp, 0, 0, canvas.width, canvas.height);
-    const dataUrl = canvas.toDataURL(type, 0.88);
+    const dataUrl = canvas.toDataURL(type, quality);
     return { image: dataUrl.split(',')[1], mimeType: type };
   } catch {
     // เบราว์เซอร์ถอดรูปไม่ได้ (เช่น HEIC บางเครื่อง) → ส่งไฟล์เดิม

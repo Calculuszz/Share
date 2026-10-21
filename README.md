@@ -22,8 +22,26 @@ npm test               # ทดสอบส่วนคำนวณ (มีต�
 | `public/bill.html` + `bill.js` | หน้าเพื่อนติ๊ก + สรุปยอด (`/b/:id`) อัปเดตสดทุก 4 วิ |
 | `lib/promptpay.js` | สร้าง QR PromptPay ใส่ยอดของแต่ละคน (เทสต์เทียบกับไลบรารี promptpay-qr) |
 | `lib/gemini.js` | อ่านบิลด้วย Gemini — เรียกจาก server เท่านั้น |
-| `lib/store.js` | เก็บบิลเป็นไฟล์ JSON ใน `data/bills/` |
-| `server.js` | HTTP server + API (ไม่มี framework) |
+| `lib/app.js` | API ทั้งหมด (/api/*) ใช้ร่วมกันทั้ง Vercel และในเครื่อง |
+| `lib/store.js` | ที่เก็บบิล: Upstash Redis ถ้าตั้งไว้ ไม่งั้นเป็นไฟล์ใน `data/bills/` |
+| `api/index.js` | จุดเข้าของ Vercel Function |
+| `server.js` | server สำหรับรันในเครื่อง (ไฟล์หน้าเว็บ + API) |
+
+## Deploy บน Vercel
+
+1. Vercel → Add New Project → เลือก repo นี้ (ไม่ต้องตั้ง build command, `vercel.json` ตั้งไว้ให้แล้ว)
+2. โปรเจกต์ → แท็บ **Storage** → **Upstash (Redis)** → แผนฟรี, region **Singapore** → เชื่อมกับโปรเจกต์
+   Vercel จะใส่ `KV_REST_API_URL` และ `KV_REST_API_TOKEN` ให้เอง
+3. Settings → Environment Variables → ใส่ `GEMINI_API_KEY` (และ `GEMINI_MODEL` ถ้าอยากเปลี่ยน)
+4. Deployments → Redeploy เพื่อให้ค่าใหม่มีผล
+
+| ตัวแปร | ต้องมีไหม |
+|---|---|
+| `KV_REST_API_URL`, `KV_REST_API_TOKEN` | ต้องมี — ไม่งั้นบันทึกบิลไม่ได้ (หน้าเว็บจะขึ้น "ตอนนี้เปิดบิลไม่ได้") |
+| `GEMINI_API_KEY` | ต้องมีถ้าจะถ่ายบิล — ไม่มีก็ยังพิมพ์รายการเองได้ |
+| `GEMINI_MODEL` | ไม่ต้อง (ค่าเริ่มต้น `gemini-3.8-flash`) |
+
+ข้อจำกัดของ Vercel ที่เกี่ยว: request ละไม่เกิน 4.5MB (หน้าเว็บย่อรูปบิลให้แล้ว), function ตั้งเวลาไว้ 60 วินาที, region `sin1`
 
 ## Gemini
 

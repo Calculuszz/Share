@@ -274,6 +274,7 @@ $('qrFile').addEventListener('change', async (e) => {
   e.target.value = '';
   if (!file) return;
   payment.qr = await prepareImage(file, 1000, 'image/png'); // PNG ให้ QR คม
+  if (payment.qr.image.length > 2_000_000) payment.qr = await prepareImage(file, 900, 'image/jpeg', 0.92);
   payment.previewUrl = `data:${payment.qr.mimeType};base64,${payment.qr.image}`;
   renderPayment();
   paymentChanged();
@@ -322,7 +323,9 @@ $('fileInput').addEventListener('change', async (e) => {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span><span>กำลังอ่านบิล…</span>';
   try {
-    const payload = await prepareImage(file);
+    // ส่งได้ไม่เกิน ~4.5MB (ข้อจำกัดของ Vercel) — ถ้ารูปยังใหญ่ ย่อลงอีกขั้น
+    let payload = await prepareImage(file);
+    if (payload.image.length > 3_000_000) payload = await prepareImage(file, 1500, 'image/jpeg', 0.8);
     const r = await api('scan', { method: 'POST', body: payload });
     if (!r.items.length) throw new Error(r.notes || 'อ่านรายการไม่ออก ถ่ายใหม่ให้เห็นทั้งใบนะ');
     state.items = r.items.map((it) => ({ id: rid(), qty: it.qty, name: it.name, total: it.total, uncertain: it.uncertain }));

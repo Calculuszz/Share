@@ -1,20 +1,14 @@
+// รันในเครื่อง: npm start → http://localhost:3000
+// บน Vercel ไม่ใช้ไฟล์นี้ — หน้าเว็บมาจาก public/ ผ่าน CDN และ /api/* ไปที่ api/index.js
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
-import { timingSafeEqual } from 'node:crypto';
 import path from 'node:path';
-import QRCode from 'qrcode';
-import { createBill, getBill, updateBill, newId, isValidId, saveQr, readQr, deleteQr } from './lib/store.js';
-import { scanReceipt, isConfigured, GEMINI_MODEL } from './lib/gemini.js';
-import { promptPayPayload, normalizePromptPayId } from './lib/promptpay.js';
-import { computeBill, shareOf } from './public/calc.js';
+import { handleApi, send } from './lib/app.js';
+import { isConfigured, GEMINI_MODEL } from './lib/gemini.js';
+import { storeKind } from './lib/store.js';
 
 const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC_DIR = path.resolve('public');
-const MAX_JSON = 64 * 1024;
-const MAX_SCAN = 12 * 1024 * 1024;
-const MAX_QR = 3 * 1024 * 1024;
-const QR_TYPES = { 'image/png': true, 'image/jpeg': true, 'image/webp': true };
-const IMAGE_TYPES =new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif']);
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -22,285 +16,22 @@ const MIME = {
   '.css': 'text/css; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
+  '.jpg': 'image/jpeg',
   '.ico': 'image/x-icon',
-  '.webmanifest': 'application/manifest+json',
 };
 
-class HttpError extends Error {
-  constructor(status, message) { super(message); this.status = status; }
-}
-
-function send(res, status, body) {
-  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify(body));
-}
-
-async function readJson(req, limit) {
-  let size = 0;
-  const chunks = [];
-  for await (const chunk of req) {
-    size += chunk.length;
-    if (size > limit) throw new HttpError(413, 'รูปใหญ่เกินไป ลองรูปที่เล็กลง');
-    chunks.push(chunk);
-  }
-  try {
-    return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
-  } catch {
-    throw new HttpError(400, 'มีอะไรผิดพลาด ลองใหม่อีกครั้ง');
-  }
-}
-
-// ---------- ตรวจข้อมูลที่ส่งเข้ามา ----------
-const text = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
-const money = (v) => {
-  const n = Number(v);
-  if (!Number.isFinite(n) || Math.abs(n) > 10_000_000) throw new HttpError(400, 'ตัวเลขราคาไม่ถูกต้อง');
-  return Math.round(n * 100) / 100;
-};
-const share = (v) => {
-  const n = Number(v);
-  if (!Number.isFinite(n) || n < 0 || n > 1000) throw new HttpError(400, 'จำนวนไม่ถูกต้อง');
-  return n;
-};
-const optId = (v) => (typeof v === 'string' && isValidId(v) ? v : newId());
-
-function cleanDraft(body) {
-  const people = (Array.isArray(body.people) ? body.people : []).slice(0, 40).map((p) => ({
-    id: optId(p?.id),
-    name: text(p?.name, 30),
-    mode: p?.mode === 'pick' ? 'pick' : 'normal',
-  })).filter((p) => p.name);
-  if (people.length === 0) throw new HttpError(400, 'ใส่ชื่อคนในวงก่อน');
-  if (new Set(people.map((p) => p.name)).size !== people.length) throw new HttpError(400, 'ชื่อคนในวงซ้ำกัน');
-
-  const items = (Array.isArray(body.items) ? body.items : []).slice(0, 300).map((it) => ({
-    id: optId(it?.id),
-    qty: money(it?.qty ?? 1),
-    name: text(it?.name, 120) || 'ไม่มีชื่อ',
-    total: money(it?.total ?? 0),
-  }));
-
-  const payerId = people.some((p) => p.id === body.payerId) ? body.payerId : people[0].id;
-  const sub = body.subtotal === null || body.subtotal === '' || body.subtotal === undefined ? null : money(body.subtotal);
-  return {
-    store: text(body.store, 120),
-    date: text(body.date, 10),
-    time: text(body.time, 5),
-    table: text(body.table, 20),
-    subtotal: sub,
-    people, payerId, items,
-  };
-}
-
-const publicBill = ({ editKey, ...rest }) => rest;
-
-// ---------- บันทึกการแก้ (req 4.5: กันแกล้งด้วยความโปร่งใส) ----------
-const MAX_LOG = 500;
-const logEntry = (e) => ({ at: new Date().toISOString(), ...e });
-function addLog(bill, e) {
-  bill.log = [...(bill.log || []), logEntry(e)].slice(-MAX_LOG);
-}
-/** คนที่กดแก้ — ไม่มี login จึงเชื่อชื่อที่เครื่องนั้นเลือกไว้ (ถ้าไม่รู้ = null) */
-const actorOf = (bill, body) => (bill.people.some((p) => p.id === body.actorId) ? body.actorId : null);
-
-function checkKey(bill, key) {
-  const a = Buffer.from(String(bill.editKey));
-  const b = Buffer.from(String(key || ''));
-  if (a.length !== b.length || !timingSafeEqual(a, b)) throw new HttpError(403, 'แก้ได้เฉพาะคนที่สร้างบิล');
-}
-
-function assertOpen(bill) {
-  if (bill.closed) throw new HttpError(423, 'บิลนี้ปิดแล้ว ให้คนจ่ายเปิดก่อนถึงจะแก้ได้');
-}
-
-// ---------- API ----------
-async function api(req, res, parts) {
-  const method = req.method;
-
-  if (parts[0] === 'config' && method === 'GET') {
-    return send(res, 200, { scanEnabled: isConfigured(), model: GEMINI_MODEL });
-  }
-
-  if (parts[0] === 'scan' && method === 'POST') {
-    const body = await readJson(req, MAX_SCAN);
-    const mimeType = String(body.mimeType || '');
-    if (!IMAGE_TYPES.has(mimeType)) throw new HttpError(400, 'ใช้ได้แค่ไฟล์รูป');
-    if (typeof body.image !== 'string' || body.image.length < 100) throw new HttpError(400, 'ไม่มีรูปบิล');
-    const result = await scanReceipt(body.image.replace(/^data:[^,]+,/, ''), mimeType);
-    return send(res, 200, result);
-  }
-
-  if (parts[0] !== 'bills') throw new HttpError(404, 'ไม่พบ');
-
-  if (parts.length === 1 && method === 'POST') {
-    const draft = cleanDraft(await readJson(req, MAX_JSON * 4));
-    const editKey = newId(16);
-    const bill = await createBill({
-      ...draft,
-      items: draft.items.map((it) => ({ ...it, overrides: {} })),
-      editKey, closed: false,
-    });
-    return send(res, 201, { bill: publicBill(bill), editKey });
-  }
-
-  const id = parts[1];
-  if (!isValidId(id)) throw new HttpError(404, 'ไม่พบบิลนี้');
-
-  if (parts.length === 2 && method === 'GET') {
-    const bill = await getBill(id);
-    if (!bill) throw new HttpError(404, 'ไม่พบบิลนี้');
-    return send(res, 200, { bill: publicBill(bill) });
-  }
-
-  const key = req.headers['x-edit-key'];
-
-  // คนจ่ายแก้รายการ/คน — เก็บการติ๊กของเพื่อนไว้ตาม id รายการ
-  if (parts.length === 2 && method === 'PUT') {
-    const draft = cleanDraft(await readJson(req, MAX_JSON * 4));
-    const bill = await updateBill(id, (b) => {
-      checkKey(b, key);
-      assertOpen(b);
-      const oldItems = new Map(b.items.map((it) => [it.id, it]));
-      const personIds = new Set(draft.people.map((p) => p.id));
-      const oldModes = new Map(b.people.map((p) => [p.id, p.mode]));
-      return {
-        ...b, ...draft,
-        // โหมดเป็นของเพื่อนแต่ละคน ไม่ให้หน้าแก้ของคนจ่ายทับ
-        people: draft.people.map((p) => ({ ...p, mode: oldModes.get(p.id) ?? p.mode })),
-        items: draft.items.map((it) => {
-          const prev = oldItems.get(it.id)?.overrides ?? {};
-          const overrides = Object.fromEntries(Object.entries(prev).filter(([pid]) => personIds.has(pid)));
-          return { ...it, overrides };
-        }),
-        log: [...(b.log || []), logEntry({ kind: 'items', by: draft.payerId })].slice(-MAX_LOG),
-      };
-    });
-    return send(res, 200, { bill: publicBill(bill) });
-  }
-
-  // ติ๊ก/ใส่ส่วนทีละรายการ — ส่งเฉพาะสิ่งที่เปลี่ยน จึงไม่ทับคนอื่น
-  // แก้แทนคนอื่นได้ (req 4.5: ไม่ล็อก) แต่ทุกครั้งถูกบันทึกว่าใครแก้ เพื่อให้ทุกคนเห็นและแก้คืนได้
-  if (parts[2] === 'share' && method === 'PATCH') {
-    const body = await readJson(req, MAX_JSON);
-    const bill = await updateBill(id, (b) => {
-      assertOpen(b);
-      const person = b.people.find((p) => p.id === body.personId);
-      if (!person) throw new HttpError(400, 'ไม่พบชื่อนี้ในวง');
-      const item = b.items.find((it) => it.id === body.itemId);
-      if (!item) throw new HttpError(409, 'รายการนี้ถูกลบไปแล้ว');
-      const before = shareOf(item, person);
-      item.overrides = { ...item.overrides };
-      if (body.share === null) delete item.overrides[body.personId];
-      else item.overrides[body.personId] = share(body.share);
-      const after = shareOf(item, person);
-      if (before !== after) {
-        addLog(b, { kind: 'share', by: actorOf(b, body), person: person.id, item: item.id, itemName: item.name, from: before, to: after });
-      }
-      return b;
-    });
-    return send(res, 200, { bill: publicBill(bill) });
-  }
-
-  if (parts[2] === 'mode' && method === 'PATCH') {
-    const body = await readJson(req, MAX_JSON);
-    const bill = await updateBill(id, (b) => {
-      assertOpen(b);
-      const p = b.people.find((x) => x.id === body.personId);
-      if (!p) throw new HttpError(400, 'ไม่พบชื่อนี้ในวง');
-      const mode = body.mode === 'pick' ? 'pick' : 'normal';
-      if (p.mode !== mode) addLog(b, { kind: 'mode', by: actorOf(b, body), person: p.id, to: mode });
-      p.mode = mode;
-      return b;
-    });
-    return send(res, 200, { bill: publicBill(bill) });
-  }
-
-  if (parts[2] === 'closed' && method === 'PUT') {
-    const body = await readJson(req, MAX_JSON);
-    const bill = await updateBill(id, (b) => {
-      checkKey(b, key);
-      addLog(b, { kind: body.closed ? 'close' : 'reopen', by: b.payerId });
-      return { ...b, closed: Boolean(body.closed) };
-    });
-    return send(res, 200, { bill: publicBill(bill) });
-  }
-
-  // ---------- QR รับเงินของคนจ่าย ----------
-  // เปลี่ยนได้เฉพาะคนสร้างบิล — ปลายทางเงินต้องล็อก ไม่งั้นแกล้งเปลี่ยน QR แล้วเงินไปผิดคน
-  if (parts[2] === 'payment' && method === 'PUT') {
-    const body = await readJson(req, MAX_QR);
-    const current = await getBill(id);
-    if (!current) throw new HttpError(404, 'ไม่พบบิลนี้');
-    checkKey(current, key);
-
-    let qrType;
-    if (body.qr && typeof body.qr === 'object') {
-      if (!QR_TYPES[body.qr.mimeType]) throw new HttpError(400, 'ใช้ได้แค่ไฟล์รูป');
-      const buf = Buffer.from(String(body.qr.image || ''), 'base64');
-      if (buf.length < 100) throw new HttpError(400, 'ไม่มีรูป QR');
-      await saveQr(id, buf);
-      qrType = body.qr.mimeType;
-    } else if (body.qr === null) {
-      await deleteQr(id);
-      qrType = null;
-    }
-
-    let promptpay;
-    if (body.promptpay !== undefined) {
-      if (body.promptpay === null || String(body.promptpay).trim() === '') promptpay = null;
-      else if (!(promptpay = normalizePromptPayId(body.promptpay))) {
-        throw new HttpError(400, 'เลขพร้อมเพย์ต้องเป็นเบอร์มือถือ 10 หลัก หรือเลขบัตร 13 หลัก');
-      }
-    }
-
-    const bill = await updateBill(id, (b) => {
-      const pay = { ...(b.payment || {}) };
-      if (qrType !== undefined) { pay.qrType = qrType; pay.qrVersion = qrType ? (pay.qrVersion || 0) + 1 : 0; }
-      if (promptpay !== undefined) pay.promptpay = promptpay;
-      pay.name = text(body.name ?? pay.name ?? '', 60);
-      addLog(b, { kind: 'payment', by: b.payerId });
-      return { ...b, payment: pay };
-    });
-    return send(res, 200, { bill: publicBill(bill) });
-  }
-
-  if (parts[2] === 'qr' && method === 'GET') {
-    const bill = await getBill(id);
-    const buf = bill?.payment?.qrType && await readQr(id);
-    if (!buf) throw new HttpError(404, 'ยังไม่มี QR');
-    res.writeHead(200, { 'Content-Type': bill.payment.qrType, 'Cache-Control': 'private, max-age=31536000', 'X-Content-Type-Options': 'nosniff' });
-    return res.end(buf);
-  }
-
-  // QR PromptPay ของแต่ละคน ใส่ยอดที่ต้องโอนให้เลย — ยอดคำนวณที่ server ไม่เชื่อตัวเลขจากหน้าเว็บ
-  if (parts[2] === 'promptpay' && parts[3] && method === 'GET') {
-    const bill = await getBill(id);
-    if (!bill?.payment?.promptpay) throw new HttpError(404, 'ยังไม่ได้ใส่เลขพร้อมเพย์');
-    const r = computeBill(bill);
-    const pp = r.perPerson[parts[3]];
-    if (!pp) throw new HttpError(404, 'ไม่พบชื่อนี้ในวง');
-    const svg = await QRCode.toString(promptPayPayload(bill.payment.promptpay, pp.pay), {
-      type: 'svg', errorCorrectionLevel: 'M', margin: 2, color: { dark: '#141414', light: '#ffffff' },
-    });
-    res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'no-store' });
-    return res.end(svg);
-  }
-
-  throw new HttpError(404, 'ไม่พบ');
-}
-
-// ---------- ไฟล์หน้าเว็บ ----------
-async function serveStatic(req, res, pathname) {
+// ตรงกับ rewrites ใน vercel.json
+async function serveStatic(res, pathname) {
   let rel = pathname;
   if (rel === '/' || rel.startsWith('/edit/')) rel = '/index.html';
   else if (rel.startsWith('/b/')) rel = '/bill.html';
   const filePath = path.join(PUBLIC_DIR, path.normalize(rel));
-  if (!filePath.startsWith(PUBLIC_DIR + path.sep)) throw new HttpError(404, 'ไม่พบ');
+  if (!filePath.startsWith(PUBLIC_DIR + path.sep)) return send(res, 404, { error: 'ไม่พบหน้านี้' });
   let data;
   try {
     data = await readFile(filePath);
   } catch {
-    throw new HttpError(404, 'ไม่พบหน้านี้');
+    return send(res, 404, { error: 'ไม่พบหน้านี้' });
   }
   res.writeHead(200, {
     'Content-Type': MIME[path.extname(filePath)] || 'application/octet-stream',
@@ -312,23 +43,18 @@ async function serveStatic(req, res, pathname) {
 
 const server = http.createServer(async (req, res) => {
   const { pathname } = new URL(req.url, 'http://x');
+  if (pathname.startsWith('/api/')) return handleApi(req, res, pathname);
+  if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, { error: 'Method not allowed' });
   try {
-    if (pathname.startsWith('/api/')) {
-      await api(req, res, pathname.slice(5).split('/').filter(Boolean));
-    } else if (req.method === 'GET' || req.method === 'HEAD') {
-      await serveStatic(req, res, decodeURIComponent(pathname));
-    } else {
-      throw new HttpError(405, 'Method not allowed');
-    }
+    await serveStatic(res, decodeURIComponent(pathname));
   } catch (e) {
-    const status = e.status || 500;
-    if (status >= 500) console.error(e);
-    if (!res.headersSent) send(res, status, { error: status >= 500 && !e.status ? 'มีอะไรผิดพลาด ลองใหม่อีกครั้ง' : e.message });
-    else res.end();
+    console.error(e);
+    if (!res.headersSent) send(res, 500, { error: 'มีอะไรผิดพลาด ลองใหม่อีกครั้ง' });
   }
 });
 
 server.listen(PORT, () => {
   console.log(`หารค่าเหล้า → http://localhost:${PORT}`);
   console.log(isConfigured() ? `Gemini: ${GEMINI_MODEL}` : 'Gemini: ยังไม่ได้ตั้ง GEMINI_API_KEY (ใช้แบบพิมพ์เองได้)');
+  console.log(`ที่เก็บบิล: ${storeKind === 'redis' ? 'Redis' : 'ไฟล์ใน data/bills/'}`);
 });
