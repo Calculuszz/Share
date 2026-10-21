@@ -14,6 +14,25 @@ export function shareOf(item, person) {
   return person.mode === 'pick' ? 0 : 1;
 }
 
+/**
+ * ส่วนสูงสุดที่คนหนึ่งใส่ได้ในรายการนี้ — ทุกคนรวมกันต้องไม่เกินจำนวนที่สั่ง
+ * (ข้าวเหนียว 7 ห่อ: บี 3 แล้ว ซีใส่ได้ไม่เกิน 4)
+ * แต่ "กินด้วย" 1 ส่วนทำได้เสมอ เพราะของแชร์เช่น เบียร์ 3 ขวดหาร 4 คน เป็นเรื่องปกติ
+ */
+export function maxShareFor(item, people, personId) {
+  const qty = Number(item.qty);
+  if (!Number.isFinite(qty) || qty < 1) return 1;
+  const others = people.filter((p) => p.id !== personId).reduce((s, p) => s + shareOf(item, p), 0);
+  return Math.max(1, Math.min(qty, qty - others));
+}
+
+/** ตัดรหัสเมนูหน้าชื่อ เช่น "(C4) ไส้อ่อนทอด" → "ไส้อ่อนทอด", "R26 ข้าวผัด" → "ข้าวผัด" */
+export function cleanMenuName(name) {
+  const s = String(name ?? '');
+  const cut = s.replace(/^\s*\(?\s*[A-Za-z]{1,3}\s?-?\d{1,4}[A-Za-z]?\s*\)?\s*[.:\-]?\s*/, '');
+  return cut.trim() ? cut.trim() : s.trim();
+}
+
 /** ยอดรวมของรายการทั้งหมด */
 export function itemsTotal(items) {
   return items.reduce((s, it) => s + (Number(it.total) || 0), 0);

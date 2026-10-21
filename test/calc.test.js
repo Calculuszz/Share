@@ -88,3 +88,31 @@ test('เทียบ Subtotal รายงานส่วนต่าง ไม
   assert.equal(r.diff, 218);
   assert.equal(checkSubtotal(items, '').matches, false);
 });
+
+test('ตัดรหัสเมนูหน้าชื่อ', async () => {
+  const { cleanMenuName } = await import('../public/calc.js');
+  const cases = {
+    '(C4) ไส้อ่อนทอดกระเทียม': 'ไส้อ่อนทอดกระเทียม',
+    '(R26) ข้าวผัดหมู (ล)': 'ข้าวผัดหมู (ล)',
+    '(D40) ช้างคลาสิค 1 โปร (3 ขวด)': 'ช้างคลาสิค 1 โปร (3 ขวด)',
+    'R03 ข้าวเหนียว': 'ข้าวเหนียว',
+    'A12. ต้มยำ': 'ต้มยำ',
+    'ลาบเป็ด': 'ลาบเป็ด',
+    '(ล) น้ำเปล่า': '(ล) น้ำเปล่า',
+    '(C4)': '(C4)',
+  };
+  for (const [a, b] of Object.entries(cases)) assert.equal(cleanMenuName(a), b, a);
+});
+
+test('เพดานส่วน: ทุกคนรวมกันไม่เกินจำนวนที่สั่ง แต่กินด้วย 1 ส่วนได้เสมอ', async () => {
+  const { maxShareFor } = await import('../public/calc.js');
+  const ppl = people.slice(0, 3); // เอ บี ซี โหมดปกติ
+  const sticky = { qty: 7, overrides: { a: 0, b: 3 } }; // ซี default 1
+  assert.equal(maxShareFor(sticky, ppl, 'c'), 4); // 7 - บี 3
+  assert.equal(maxShareFor(sticky, ppl, 'b'), 6); // 7 - ซี 1
+  const beer = { qty: 3, overrides: {} }; // 3 ขวด 3 คน คนละ 1 → เต็มแล้ว
+  assert.equal(maxShareFor(beer, ppl, 'a'), 1);
+  const full = { qty: 2, overrides: {} }; // 2 ชิ้น 3 คน → เกินอยู่แล้ว แต่ยังกินด้วยได้
+  assert.equal(maxShareFor(full, ppl, 'a'), 1);
+  assert.equal(maxShareFor({ qty: 8, overrides: { a: 0, b: 0, c: 0 } }, ppl, 'a'), 8);
+});

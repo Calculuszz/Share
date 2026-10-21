@@ -1,7 +1,7 @@
 // หน้าเพื่อนติ๊กรายการ (req 4) + สรุปยอดการโอน (req 3.5) + QR โอนเงิน
 // req 4.5: ไม่มี login — เลือกชื่อตัวเอง, แก้แทนคนอื่นได้ แต่ทุกการแก้ถูกบันทึกและแสดงให้ทุกคนเห็น
 import { api, baht, baht0, fmtShare, fmtPromptPay, esc, store, editKeyFor, toast, copyText, icons } from './common.js';
-import { computeBill, shareOf, checkSubtotal } from './calc.js';
+import { computeBill, shareOf, checkSubtotal, maxShareFor, cleanMenuName } from './calc.js';
 
 const $ = (id) => document.getElementById(id);
 const billId = location.pathname.split('/')[2];
@@ -27,11 +27,18 @@ const me = () => bill?.people.find((p) => p.id === meId) || null;
 const nameOf = (id) => bill.people.find((p) => p.id === id)?.name ?? 'มีคน';
 const hhmm = (iso) => new Date(iso).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
 
+/** ชื่อเมนูไม่เอารหัสร้าน เช่น (C4) — บิลเก่าที่บันทึกไว้แล้วก็แสดงแบบสะอาด */
+function tidy(b) {
+  for (const it of b.items) it.name = cleanMenuName(it.name);
+  for (const e of b.log || []) if (e.itemName) e.itemName = cleanMenuName(e.itemName);
+  return b;
+}
+
 // ---------- โหลด & อัปเดตสด ----------
 async function load() {
   try {
     const r = await api(`bills/${billId}`);
-    if (!bill || r.bill.version !== bill.version) { bill = r.bill; render(); }
+    if (!bill || r.bill.version !== bill.version) { bill = tidy(r.bill); render(); }
   } catch (e) {
     if (!bill) {
       $('storeName').textContent = 'เปิดบิลไม่ได้';
@@ -49,7 +56,7 @@ async function mutate(path, body, optimistic) {
   pending++;
   try {
     const r = await api(`bills/${billId}/${path}`, { method: 'PATCH', body: { ...body, actorId: meId } });
-    if (pending === 1) bill = r.bill; // ถ้ายังมีคำขออื่นค้างอยู่ รอผลสุดท้าย
+    if (pending === 1) bill = tidy(r.bill); // ถ้ายังมีคำขออื่นค้างอยู่ รอผลสุดท้าย
   } catch (e) {
     toast(e.message, true);
     pending--;
@@ -228,13 +235,15 @@ function renderItems(r) {
     const myAmount = inIt ? item.total * (mine / shareSum) : 0;
     const eaters = bill.people.map((x) => [x, shareOf(item, x)]).filter(([, v]) => v > 0);
     const showStepper = inIt && (item.qty > 1 || mine !== 1);
+    const max = maxShareFor(item, bill.people, p.id);
+    const counted = eaters.some(([, v]) => v !== 1); // มีคนใส่จำนวนชิ้น → บอกว่าครบหรือยัง
     const lastOther = log.findLast((e) => e.item === item.id && onBehalf(e));
     const open = expanded.has(item.id);
     return `
       <article class="item-card${inIt ? ' in' : ''}${unassigned ? ' orphan' : ''}" data-id="${item.id}">
         <div class="row">
-          <div style="min-width:0">
-            <div class="qty">${fmtShare(item.qty)} ×</div>
+          <div class="title">
+            <span class="qty-tag" aria-label="จำนวน ${fmtShare(item.qty)}">×${fmtShare(item.qty)}</span>
             <div class="name">${esc(item.name)}</div>
           </div>
           <div class="total price">฿${baht(item.total)}</div>
@@ -243,7 +252,7 @@ function renderItems(r) {
           ? '<b style="color:var(--danger)">ยังไม่มีใครกิน</b>'
           : inIt
             ? `หาร ${eaters.length} คน · คุณจ่าย <b>${baht(myAmount)}</b>`
-            : `${eaters.length} คนกิน · คุณไม่ได้กิน`}</div>
+            : `${eaters.length} คนกิน · คุณไม่ได้กิน`}${counted && item.qty > 1 ? ` · ใส่แล้ว ${fmtShare(shareSum)}/${fmtShare(item.qty)}` : ''}</div>
         <div class="eaters">${eaters.map(([x, v]) => `<span class="eater">${esc(x.name)}${v !== 1 ? ` ×${fmtShare(v)}` : ''}</span>`).join('')}</div>
         ${lastOther ? `<div class="edited-by">✎ ${hhmm(lastOther.at)} ${describe(lastOther)}</div>` : ''}
         ${open ? `
@@ -256,7 +265,7 @@ function renderItems(r) {
             <div class="stepper sm" role="group" aria-label="คุณกินกี่ชิ้น">
               <button data-act="dec" aria-label="ลด" ${locked || mine <= 1 ? 'disabled' : ''}>–</button>
               <output>${fmtShare(mine)}</output>
-              <button data-act="inc" aria-label="เพิ่ม" ${locked ? 'disabled' : ''}>+</button>
+              <button data-act="inc" aria-label="เพิ่ม" ${locked || mine >= max ? 'disabled' : ''} title="${mine >= max ? `ครบ ${fmtShare(item.qty)} แล้ว` : ''}">+</button>
             </div>` : ''}
           <button class="btn" data-act="${inIt ? 'out' : 'in'}" ${locked ? 'disabled' : ''}>
             ${inIt ? 'เอาชื่อออก' : `${icons.basket}<span>กินด้วย</span>`}
@@ -286,7 +295,8 @@ $('itemList').addEventListener('click', (e) => {
     return render();
   }
   const cur = shareOf(item, me());
-  const next = { in: 1, out: 0, inc: cur + 1, dec: Math.max(1, cur - 1) }[b.dataset.act];
+  const next = { in: 1, out: 0, inc: Math.min(cur + 1, maxShareFor(item, bill.people, meId)), dec: Math.max(1, cur - 1) }[b.dataset.act];
+  if (next === cur) return;
   setShare(id, meId, next);
 });
 
@@ -361,7 +371,7 @@ $('summaryView').addEventListener('click', async (e) => {
   if (e.target.closest('#closeBtn')) {
     try {
       const r = await api(`bills/${billId}/closed`, { method: 'PUT', body: { closed: !bill.closed }, key: editKey });
-      bill = r.bill;
+      bill = tidy(r.bill);
       toast(bill.closed ? 'ปิดบิลแล้ว' : 'เปิดบิลแล้ว');
       render();
     } catch (err) { toast(err.message, true); }

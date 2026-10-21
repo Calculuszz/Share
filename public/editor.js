@@ -1,6 +1,6 @@
 // หน้าคนจ่าย: สแกน/พิมพ์รายการ → เทียบ Subtotal → บันทึก → แชร์ลิงก์ (req 5.2)
 import { api, baht, esc, store, editKeyFor, saveEditKey, toast, prepareImage, copyText, icons } from './common.js';
-import { checkSubtotal } from './calc.js';
+import { checkSubtotal, cleanMenuName } from './calc.js';
 
 const $ = (id) => document.getElementById(id);
 const rid = () => {
@@ -51,7 +51,7 @@ async function init() {
         store: bill.store, date: bill.date, time: bill.time, table: bill.table,
         subtotal: bill.subtotal ?? '',
         people: bill.people, payerId: bill.payerId,
-        items: bill.items.map(({ overrides, ...it }) => it),
+        items: bill.items.map(({ overrides, ...it }) => ({ ...it, name: cleanMenuName(it.name) })),
       };
       savedId = editId;
       payment.promptpay = bill.payment?.promptpay || '';
@@ -142,8 +142,8 @@ function renderItems() {
   $('itemRows').innerHTML = state.items.map((it, i) => `
     <div class="item-row${it.uncertain ? ' uncertain' : ''}" data-i="${i}">
       <input class="input" data-f="name" value="${esc(it.name)}" placeholder="ชื่อเมนู" aria-label="ชื่อเมนู">
-      <input class="input num" data-f="qty" inputmode="decimal" value="${esc(it.qty)}" aria-label="จำนวน" title="จำนวน">
-      <input class="input num" data-f="total" inputmode="decimal" value="${esc(it.total)}" placeholder="ราคา" aria-label="ราคา">
+      <label class="mini qty"><span>จำนวน</span><input class="input num" data-f="qty" inputmode="numeric" value="${esc(it.qty)}"></label>
+      <label class="mini total"><span>ราคา</span><input class="input num" data-f="total" inputmode="decimal" value="${esc(it.total)}" placeholder="0"></label>
       <button class="icon-btn" data-del="${i}" aria-label="ลบบรรทัด" style="width:36px;height:36px;color:var(--muted)">${icons.trash}</button>
       ${it.uncertain ? '<div class="hint">ตัวเลขบรรทัดนี้ไม่ชัด ดูบิลอีกทีนะ</div>' : ''}
     </div>`).join('');

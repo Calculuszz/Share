@@ -182,7 +182,7 @@ button { cursor: pointer; border: 0; background: none; padding: 0; }
 /* ---------- แถวรายการในหน้ากรอก ---------- */
 /* ชื่อเมนูจริงยาว (เช่น "(R24) ผัดพริกแกงหมู ราดข้าว") → ชื่อได้ทั้งแถวบน, จำนวน/ราคาอยู่แถวล่าง */
 .item-row {
-  display: grid; grid-template-columns: 72px 1fr 36px; gap: 8px; align-items: center;
+  display: grid; grid-template-columns: 112px 1fr 36px; gap: 8px; align-items: center;
   grid-template-areas: "name name name" "qty total del";
   padding: 10px; margin-bottom: 8px;
   background: var(--surface); border-radius: var(--radius-md);
@@ -192,8 +192,15 @@ button { cursor: pointer; border: 0; background: none; padding: 0; }
 .item-row .input { height: 44px; padding: 0 10px; }
 .item-row .input.num { text-align: right; font-variant-numeric: tabular-nums; }
 .item-row [data-f="name"] { grid-area: name; }
-.item-row [data-f="qty"] { grid-area: qty; }
-.item-row [data-f="total"] { grid-area: total; }
+.item-row .mini.qty { grid-area: qty; }
+.item-row .mini.total { grid-area: total; }
+.item-row .mini { position: relative; display: block; }
+.item-row .mini span {
+  position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+  font-size: 13px; color: var(--muted); pointer-events: none;
+}
+.item-row .mini .input { padding-left: 52px; font-weight: 600; }
+.item-row .mini.qty .input { padding-left: 58px; font-size: 17px; }
 .item-row [data-del] { grid-area: del; }
 .item-row .hint { grid-column: 1 / -1; color: var(--yellow); font-size: 12px; margin-top: -2px; }
 .item-row .num-label { font-size: 11px; color: var(--muted); }
@@ -210,7 +217,16 @@ button { cursor: pointer; border: 0; background: none; padding: 0; }
 .item-card.in { background: var(--yellow); color: var(--ink); }
 .item-card .row { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
 .item-card .name { font-size: 17px; font-weight: 600; line-height: 1.35; }
-.item-card .qty { font-size: 14px; opacity: .75; }
+.item-card .title { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+/* จำนวนที่สั่ง ต้องเห็นชัด */
+.qty-tag {
+  flex: none; min-width: 40px; height: 28px; padding: 0 8px; margin-top: 1px;
+  display: inline-grid; place-items: center; border-radius: 8px;
+  background: var(--surface-2); color: var(--yellow);
+  font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.item-card.in .qty-tag { background: var(--ink); color: var(--yellow); }
+.stepper button[disabled] { opacity: .35; cursor: not-allowed; }
 .item-card .total { font-size: 18px; white-space: nowrap; }
 .item-card .meta { font-size: 14px; margin-top: 6px; opacity: .85; }
 .item-card .actions { display: flex; gap: 10px; align-items: center; margin-top: 14px; }

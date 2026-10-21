@@ -31,7 +31,7 @@ const call = async (p, opts = {}) => {
 test('ทั้ง flow ผ่าน URL ที่ถูก rewrite', async () => {
   const created = await call('/api/bills', { method: 'POST', body: {
     subtotal: 300, people: [{ id: 'aaaaaaaa', name: 'เอ' }, { id: 'bbbbbbbb', name: 'บี' }], payerId: 'aaaaaaaa',
-    items: [{ id: 'item0001', qty: 1, name: 'เบียร์', total: 300 }],
+    items: [{ id: 'item0001', qty: 3, name: '(D40) เบียร์', total: 300 }],
   } });
   assert.equal(created.status, 201);
   const id = created.data.bill.id;
@@ -39,6 +39,13 @@ test('ทั้ง flow ผ่าน URL ที่ถูก rewrite', async () =
 
   const share = await call(`/api/bills/${id}/share`, { method: 'PATCH', body: { personId: 'bbbbbbbb', itemId: 'item0001', share: 2, actorId: 'bbbbbbbb' } });
   assert.equal(share.status, 200);
+  // สั่ง 3: เอ 1 + บี 2 = ครบแล้ว บีเพิ่มเป็น 3 ไม่ได้
+  const over = await call(`/api/bills/${id}/share`, { method: 'PATCH', body: { personId: 'bbbbbbbb', itemId: 'item0001', share: 3, actorId: 'bbbbbbbb' } });
+  assert.equal(over.status, 400);
+  assert.equal(over.data.error, 'เบียร์ สั่งมา 3 ใส่ได้สูงสุด 2');
+  // แต่เอ "กินด้วย" 1 ส่วนยังได้เสมอ (ลองเอาออกแล้วใส่กลับ)
+  assert.equal((await call(`/api/bills/${id}/share`, { method: 'PATCH', body: { personId: 'aaaaaaaa', itemId: 'item0001', share: 0 } })).status, 200);
+  assert.equal((await call(`/api/bills/${id}/share`, { method: 'PATCH', body: { personId: 'aaaaaaaa', itemId: 'item0001', share: null } })).status, 200);
 
   const pay = await call(`/api/bills/${id}/payment`, { method: 'PUT', headers: { 'X-Edit-Key': key }, body: { promptpay: '0812345678' } });
   assert.equal(pay.status, 200);
