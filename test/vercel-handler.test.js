@@ -39,10 +39,16 @@ test('ทั้ง flow ผ่าน URL ที่ถูก rewrite', async () =
 
   const share = await call(`/api/bills/${id}/share`, { method: 'PATCH', body: { personId: 'bbbbbbbb', itemId: 'item0001', share: 2, actorId: 'bbbbbbbb' } });
   assert.equal(share.status, 200);
-  // สั่ง 3: เอ 1 + บี 2 = ครบแล้ว บีเพิ่มเป็น 3 ไม่ได้
-  const over = await call(`/api/bills/${id}/share`, { method: 'PATCH', body: { personId: 'bbbbbbbb', itemId: 'item0001', share: 3, actorId: 'bbbbbbbb' } });
+  // สั่ง 3: บีใส่ 3 ได้ (ไม่ต้องรอเอเอาชื่อออก) แต่ใส่ 4 ไม่ได้
+  assert.equal((await call(`/api/bills/${id}/share`, { method: 'PATCH', body: { personId: 'bbbbbbbb', itemId: 'item0001', share: 3 } })).status, 200);
+  const over = await call(`/api/bills/${id}/share`, { method: 'PATCH', body: { personId: 'bbbbbbbb', itemId: 'item0001', share: 4, actorId: 'bbbbbbbb' } });
   assert.equal(over.status, 400);
-  assert.equal(over.data.error, 'เบียร์ สั่งมา 3 ใส่ได้สูงสุด 2');
+  assert.equal(over.data.error, 'เบียร์ สั่งมา 3 ใส่ได้สูงสุด 3');
+  // ตอนนี้ เอ 1 + บี 3 = 4 > 3 → บิลถูกมาร์กว่าเกิน แต่ยอดเงินยังครบ
+  const { computeBill } = await import('../public/calc.js');
+  const mid = computeBill((await call(`/api/bills/${id}`)).data.bill);
+  assert.equal(mid.overItems.length, 1);
+  assert.equal(mid.balanced, true);
   // แต่เอ "กินด้วย" 1 ส่วนยังได้เสมอ (ลองเอาออกแล้วใส่กลับ)
   assert.equal((await call(`/api/bills/${id}/share`, { method: 'PATCH', body: { personId: 'aaaaaaaa', itemId: 'item0001', share: 0 } })).status, 200);
   assert.equal((await call(`/api/bills/${id}/share`, { method: 'PATCH', body: { personId: 'aaaaaaaa', itemId: 'item0001', share: null } })).status, 200);
@@ -60,7 +66,7 @@ test('ทั้ง flow ผ่าน URL ที่ถูก rewrite', async () =
   assert.match(svg.type, /svg/);
 
   const got = await call(`/api/bills/${id}`);
-  assert.equal(got.data.bill.items[0].overrides.bbbbbbbb, 2);
+  assert.equal(got.data.bill.items[0].overrides.bbbbbbbb, 3);
   assert.equal(got.data.bill.editKey, undefined);
   assert.equal((await call('/api/bills/xx')).status, 404);
 });

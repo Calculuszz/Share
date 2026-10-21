@@ -104,15 +104,24 @@ test('ตัดรหัสเมนูหน้าชื่อ', async () => {
   for (const [a, b] of Object.entries(cases)) assert.equal(cleanMenuName(a), b, a);
 });
 
-test('เพดานส่วน: ทุกคนรวมกันไม่เกินจำนวนที่สั่ง แต่กินด้วย 1 ส่วนได้เสมอ', async () => {
+test('เพดานรายคน = จำนวนที่สั่ง ไม่ต้องรอคนอื่น', async () => {
   const { maxShareFor } = await import('../public/calc.js');
-  const ppl = people.slice(0, 3); // เอ บี ซี โหมดปกติ
-  const sticky = { qty: 7, overrides: { a: 0, b: 3 } }; // ซี default 1
-  assert.equal(maxShareFor(sticky, ppl, 'c'), 4); // 7 - บี 3
-  assert.equal(maxShareFor(sticky, ppl, 'b'), 6); // 7 - ซี 1
-  const beer = { qty: 3, overrides: {} }; // 3 ขวด 3 คน คนละ 1 → เต็มแล้ว
-  assert.equal(maxShareFor(beer, ppl, 'a'), 1);
-  const full = { qty: 2, overrides: {} }; // 2 ชิ้น 3 คน → เกินอยู่แล้ว แต่ยังกินด้วยได้
-  assert.equal(maxShareFor(full, ppl, 'a'), 1);
-  assert.equal(maxShareFor({ qty: 8, overrides: { a: 0, b: 0, c: 0 } }, ppl, 'a'), 8);
+  assert.equal(maxShareFor({ qty: 8 }), 8);
+  assert.equal(maxShareFor({ qty: 1 }), 1);
+  assert.equal(maxShareFor({ qty: 0 }), 1);
+});
+
+test('ใส่รวมเกินจำนวนที่สั่ง: เตือนเฉพาะเมื่อมีคนใส่จำนวนชิ้น', async () => {
+  const { overCount, computeBill } = await import('../public/calc.js');
+  const ppl = people.slice(0, 4); // เอ บี ซี ปกติ, ดี เลือกเอง
+  // ข้าวเหนียว 8: บี 5 + เอ 1 + ซี 1 (ยังไม่ได้เข้ามา) = 7 → ยังไม่เกิน
+  assert.equal(overCount({ qty: 8, overrides: { b: 5 } }, ppl).over, false);
+  // บี 8 + เอ 1 + ซี 1 = 10 > 8 → เกิน
+  const o = overCount({ qty: 8, overrides: { b: 8 } }, ppl);
+  assert.deepEqual([o.sum, o.qty, o.over], [10, 8, true]);
+  // เบียร์ 3 ขวด เอ บี ซี คนละ 1 + ดี 1 = 4 > 3 แต่เป็นของแชร์ปกติ → ไม่เตือน
+  assert.equal(overCount({ qty: 3, overrides: { d: 1 } }, ppl).over, false);
+  const r = computeBill({ people: ppl, items: [{ id: 'x', qty: 8, total: 120, overrides: { b: 8 } }] });
+  assert.equal(r.overItems.length, 1);
+  assert.equal(r.balanced, true); // ยอดเงินยังครบ แค่สัดส่วนยังไม่ตรง
 });

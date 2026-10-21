@@ -1,7 +1,7 @@
 // หน้าเพื่อนติ๊กรายการ (req 4) + สรุปยอดการโอน (req 3.5) + QR โอนเงิน
 // req 4.5: ไม่มี login — เลือกชื่อตัวเอง, แก้แทนคนอื่นได้ แต่ทุกการแก้ถูกบันทึกและแสดงให้ทุกคนเห็น
 import { api, baht, baht0, fmtShare, fmtPromptPay, esc, store, editKeyFor, toast, copyText, icons } from './common.js';
-import { computeBill, shareOf, checkSubtotal, maxShareFor, cleanMenuName } from './calc.js';
+import { computeBill, shareOf, checkSubtotal, maxShareFor, overCount, cleanMenuName } from './calc.js';
 
 const $ = (id) => document.getElementById(id);
 const billId = location.pathname.split('/')[2];
@@ -231,6 +231,11 @@ function renderWarnings(r) {
       ${r.unassigned.map((u) => esc(u.item.name)).join(', ')}<br>
       <span class="small">ใครกินกด "กินด้วย" นะ ไม่งั้น${esc(nameOf(bill.payerId))}ต้องจ่ายเอง</span></div></div>`;
   }
+  if (r.overItems.length) {
+    html += `<div class="alert"><div><strong>มี ${r.overItems.length} รายการที่ใส่จำนวนรวมเกินที่สั่ง</strong><br>
+      ${r.overItems.map((it) => `${esc(it.name)} (ใส่ ${fmtShare(overCount(it, bill.people).sum)} จาก ${fmtShare(it.qty)})`).join(', ')}<br>
+      <span class="small">ใครไม่ได้กินเอาชื่อออก หรือใครใส่เกินลดลงหน่อยนะ</span></div></div>`;
+  }
   const sc = checkSubtotal(bill.items, bill.subtotal);
   if (sc.subtotal !== null && !sc.matches) {
     html += `<div class="alert"><div><strong>ยอดยังไม่ตรงบิล</strong> ต่างกัน ${baht(Math.abs(sc.diff))} บาท รอ${esc(nameOf(bill.payerId))}แก้ก่อนนะ</div></div>`;
@@ -242,18 +247,18 @@ function renderItems(r) {
   const p = me();
   const locked = bill.closed;
   const log = bill.log || [];
-  $('itemList').innerHTML = r.itemRows.map(({ item, shareSum, unassigned }) => {
+  $('itemList').innerHTML = r.itemRows.map(({ item, shareSum, unassigned, over }) => {
     const mine = shareOf(item, p);
     const inIt = mine > 0;
     const myAmount = inIt ? item.total * (mine / shareSum) : 0;
     const eaters = bill.people.map((x) => [x, shareOf(item, x)]).filter(([, v]) => v > 0);
     const showStepper = inIt && (item.qty > 1 || mine !== 1);
-    const max = maxShareFor(item, bill.people, p.id);
-    const counted = eaters.some(([, v]) => v !== 1); // มีคนใส่จำนวนชิ้น → บอกว่าครบหรือยัง
+    const max = maxShareFor(item);
+    const counted = eaters.some(([, v]) => v > 1); // มีคนใส่จำนวนชิ้น → บอกว่ารวมแล้วเท่าไร
     const lastOther = log.findLast((e) => e.item === item.id && onBehalf(e));
     const open = expanded.has(item.id);
     return `
-      <article class="item-card${inIt ? ' in' : ''}${unassigned ? ' orphan' : ''}" data-id="${item.id}">
+      <article class="item-card${inIt ? ' in' : ''}${unassigned || over ? ' orphan' : ''}" data-id="${item.id}">
         <div class="row">
           <div class="title">
             <span class="qty-tag" aria-label="จำนวน ${fmtShare(item.qty)}">×${fmtShare(item.qty)}</span>
@@ -265,7 +270,9 @@ function renderItems(r) {
           ? '<b style="color:var(--danger)">ยังไม่มีใครกิน</b>'
           : inIt
             ? `หาร ${eaters.length} คน · คุณจ่าย <b>${baht(myAmount)}</b>`
-            : `${eaters.length} คนกิน · คุณไม่ได้กิน`}${counted && item.qty > 1 ? ` · ใส่แล้ว ${fmtShare(shareSum)}/${fmtShare(item.qty)}` : ''}</div>
+            : `${eaters.length} คนกิน · คุณไม่ได้กิน`}${counted && item.qty > 1 && !over ? ` · ใส่แล้ว ${fmtShare(shareSum)}/${fmtShare(item.qty)}` : ''}</div>
+        ${over ? `<div class="over-note">ใส่รวม ${fmtShare(shareSum)} แต่สั่งมา ${fmtShare(item.qty)} มีคนต้องลด</div>` : ''}
+        ${showStepper ? '<div class="step-hint">กินกี่จาน กดเท่านั้น</div>' : ''}
         <div class="eaters">${eaters.map(([x, v]) => `<span class="eater">${esc(x.name)}${v !== 1 ? ` ×${fmtShare(v)}` : ''}</span>`).join('')}</div>
         ${lastOther ? `<div class="edited-by">✎ ${hhmm(lastOther.at)} ${describe(lastOther)}</div>` : ''}
         ${open ? `
@@ -308,7 +315,7 @@ $('itemList').addEventListener('click', (e) => {
     return render();
   }
   const cur = shareOf(item, me());
-  const next = { in: 1, out: 0, inc: Math.min(cur + 1, maxShareFor(item, bill.people, meId)), dec: Math.max(1, cur - 1) }[b.dataset.act];
+  const next = { in: 1, out: 0, inc: Math.min(cur + 1, maxShareFor(item)), dec: Math.max(1, cur - 1) }[b.dataset.act];
   if (next === cur) return;
   setShare(id, meId, next);
 });
@@ -390,8 +397,10 @@ async function toggleClosed() {
   if (closing) {
     // ระบบไม่ตัดสินแทน (req 4.3) แต่เตือนให้ชัดก่อนปิด
     const r = computeBill(bill);
-    if (r.unassigned.length && !confirm(`ยังมี ${r.unassigned.map((u) => u.item.name).join(', ')} ที่ไม่มีใครกิน (${baht(r.unassignedTotal)} บาท)
-ถ้าปิดตอนนี้ คุณต้องจ่ายส่วนนี้เอง ปิดเลยไหม?`)) return;
+    const issues = [];
+    if (r.unassigned.length) issues.push(`ยังมี ${r.unassigned.map((u) => u.item.name).join(', ')} ที่ไม่มีใครกิน (${baht(r.unassignedTotal)} บาท) ถ้าปิดตอนนี้ คุณต้องจ่ายส่วนนี้เอง`);
+    if (r.overItems.length) issues.push(`${r.overItems.map((it) => it.name).join(', ')} ใส่จำนวนรวมเกินที่สั่ง ยอดแต่ละคนอาจยังไม่ตรงกับที่กินจริง`);
+    if (issues.length && !confirm(`${issues.join('\n\n')}\n\nปิดบิลเลยไหม?`)) return;
   }
   try {
     const r = await api(`bills/${billId}/closed`, { method: 'PUT', body: { closed: closing }, key: editKey });

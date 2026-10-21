@@ -227,6 +227,9 @@ button { cursor: pointer; border: 0; background: none; padding: 0; }
 }
 .item-card.in .qty-tag { background: var(--ink); color: var(--yellow); }
 .stepper button[disabled] { opacity: .35; cursor: not-allowed; }
+.over-note { margin-top: 6px; font-size: 14px; font-weight: 600; color: var(--danger); }
+.item-card.in .over-note { color: #8a1c00; }
+.step-hint { margin-top: 10px; font-size: 13px; opacity: .8; }
 .wait-note {
   margin-top: 16px; padding: 12px 14px; border-radius: 12px;
   background: rgba(0, 0, 0, .1); font-size: 15px; font-weight: 500;
