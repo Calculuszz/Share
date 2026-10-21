@@ -56,5 +56,5 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(`หารค่าเหล้า → http://localhost:${PORT}`);
   console.log(isConfigured() ? `Gemini: ${GEMINI_MODEL}` : 'Gemini: ยังไม่ได้ตั้ง GEMINI_API_KEY (ใช้แบบพิมพ์เองได้)');
-  console.log(`ที่เก็บบิล: ${storeKind === 'redis' ? 'Redis' : 'ไฟล์ใน data/bills/'}`);
+  console.log(`ที่เก็บบิล: ${storeKind.startsWith('redis') ? `Redis (${storeKind})` : 'ไฟล์ใน data/bills/'}`);
 });
