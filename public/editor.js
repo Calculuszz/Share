@@ -322,6 +322,8 @@ $('fileInput').addEventListener('change', async (e) => {
   const btn = $('scanBtn');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span><span>กำลังอ่านบิล…</span>';
+  // บิลยาวอาจใช้เวลาเกินครึ่งนาที บอกคนรอให้รู้ว่ายังทำงานอยู่
+  const slow = setTimeout(() => { btn.querySelector('span:last-child').textContent = 'บิลยาว รอแป๊บนะ…'; }, 15000);
   try {
     // ส่งได้ไม่เกิน ~4.5MB (ข้อจำกัดของ Vercel) — ถ้ารูปยังใหญ่ ย่อลงอีกขั้น
     let payload = await prepareImage(file);
@@ -339,6 +341,7 @@ $('fileInput').addEventListener('change', async (e) => {
   } catch (err) {
     toast(err.message, true);
   } finally {
+    clearTimeout(slow);
     btn.disabled = false;
     btn.innerHTML = `${icons.camera}<span>ถ่ายรูป / เลือกรูปบิล</span>`;
   }

@@ -39,16 +39,16 @@ npm test               # ทดสอบส่วนคำนวณ (มีต�
 |---|---|
 | `KV_REST_API_URL`, `KV_REST_API_TOKEN` | ต้องมี — ไม่งั้นบันทึกบิลไม่ได้ (หน้าเว็บจะขึ้น "ตอนนี้เปิดบิลไม่ได้") |
 | `GEMINI_API_KEY` | ต้องมีถ้าจะถ่ายบิล — ไม่มีก็ยังพิมพ์รายการเองได้ |
-| `GEMINI_MODEL` | ไม่ต้อง (ค่าเริ่มต้น `gemini-3.8-flash`) |
+| `GEMINI_MODEL` | ไม่ต้อง (ค่าเริ่มต้น `gemini-3.5-flash-lite`) |
 
-ข้อจำกัดของ Vercel ที่เกี่ยว: request ละไม่เกิน 4.5MB (หน้าเว็บย่อรูปบิลให้แล้ว), function ตั้งเวลาไว้ 60 วินาที, region `sin1`
+ข้อจำกัดของ Vercel ที่เกี่ยว: request ละไม่เกิน 4.5MB (หน้าเว็บย่อรูปบิลให้แล้ว), function ตั้งเวลาไว้ 300 วินาที (สูงสุดของแผนฟรี), region `sin1`
 
 ## Gemini
 
 ใช้ **Interactions API** (`client.interactions.create`) ของ `@google/genai` 2.x ซึ่งเป็นวิธีที่ Google แนะนำตอนนี้
 - structured output ผ่าน `response_format: { type: 'text', mime_type: 'application/json', schema }`
 - `store: false` ไม่ให้ Google เก็บรูปบิล, `thinking_level: 'low'` ให้ตอบเร็ว
-- โมเดลเปลี่ยนได้ที่ `GEMINI_MODEL` (ค่าเริ่มต้น `gemini-3.8-flash`, ประหยัดกว่า: `gemini-3.5-flash-lite`)
+- โมเดลเปลี่ยนได้ที่ `GEMINI_MODEL` (ค่าเริ่มต้น `gemini-3.5-flash-lite` เร็วสุดจากที่วัดกับบิลจริง; `gemini-3.8-flash` อ่านถูกเท่ากันแต่ช้ากว่า)
 
 ## ระบุตัวตน & ความโปร่งใส (req 4.5)
 
