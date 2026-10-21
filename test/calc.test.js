@@ -111,17 +111,3 @@ test('เพดานรายคน = จำนวนที่สั่ง ไ�
   assert.equal(maxShareFor({ qty: 0 }), 1);
 });
 
-test('ใส่รวมเกินจำนวนที่สั่ง: เตือนเฉพาะเมื่อมีคนใส่จำนวนชิ้น', async () => {
-  const { overCount, computeBill } = await import('../public/calc.js');
-  const ppl = people.slice(0, 4); // เอ บี ซี ปกติ, ดี เลือกเอง
-  // ข้าวเหนียว 8: บี 5 + เอ 1 + ซี 1 (ยังไม่ได้เข้ามา) = 7 → ยังไม่เกิน
-  assert.equal(overCount({ qty: 8, overrides: { b: 5 } }, ppl).over, false);
-  // บี 8 + เอ 1 + ซี 1 = 10 > 8 → เกิน
-  const o = overCount({ qty: 8, overrides: { b: 8 } }, ppl);
-  assert.deepEqual([o.sum, o.qty, o.over], [10, 8, true]);
-  // เบียร์ 3 ขวด เอ บี ซี คนละ 1 + ดี 1 = 4 > 3 แต่เป็นของแชร์ปกติ → ไม่เตือน
-  assert.equal(overCount({ qty: 3, overrides: { d: 1 } }, ppl).over, false);
-  const r = computeBill({ people: ppl, items: [{ id: 'x', qty: 8, total: 120, overrides: { b: 8 } }] });
-  assert.equal(r.overItems.length, 1);
-  assert.equal(r.balanced, true); // ยอดเงินยังครบ แค่สัดส่วนยังไม่ตรง
-});

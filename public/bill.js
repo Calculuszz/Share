@@ -1,7 +1,7 @@
 // หน้าเพื่อนติ๊กรายการ (req 4) + สรุปยอดการโอน (req 3.5) + QR โอนเงิน
 // req 4.5: ไม่มี login — เลือกชื่อตัวเอง, แก้แทนคนอื่นได้ แต่ทุกการแก้ถูกบันทึกและแสดงให้ทุกคนเห็น
 import { api, baht, baht0, fmtShare, fmtPromptPay, esc, store, editKeyFor, toast, copyText, icons } from './common.js';
-import { computeBill, shareOf, checkSubtotal, maxShareFor, overCount, cleanMenuName, paidStatus, doneStatus } from './calc.js';
+import { computeBill, shareOf, checkSubtotal, maxShareFor, cleanMenuName, paidStatus, doneStatus } from './calc.js';
 
 const $ = (id) => document.getElementById(id);
 const billId = location.pathname.split('/')[2];
@@ -257,11 +257,6 @@ function renderWarnings(r) {
       ${r.unassigned.map((u) => esc(u.item.name)).join(', ')}<br>
       <span class="small">ใครกินกด "กินด้วย" นะ ไม่งั้น${esc(nameOf(bill.payerId))}ต้องจ่ายเอง</span></div></div>`;
   }
-  if (r.overItems.length) {
-    html += `<div class="alert"><div><strong>มี ${r.overItems.length} รายการที่ใส่จำนวนรวมเกินที่สั่ง</strong><br>
-      ${r.overItems.map((it) => `${esc(it.name)} (ใส่ ${fmtShare(overCount(it, bill.people).sum)} จาก ${fmtShare(it.qty)})`).join(', ')}<br>
-      <span class="small">ใครไม่ได้กินเอาชื่อออก หรือใครใส่เกินลดลงหน่อยนะ</span></div></div>`;
-  }
   const sc = checkSubtotal(bill.items, bill.subtotal);
   if (sc.subtotal !== null && !sc.matches) {
     html += `<div class="alert"><div><strong>ยอดยังไม่ตรงบิล</strong> ต่างกัน ${baht(Math.abs(sc.diff))} บาท รอ${esc(nameOf(bill.payerId))}แก้ก่อนนะ</div></div>`;
@@ -274,7 +269,7 @@ function renderItems(r) {
   const locked = bill.closed;
   const log = bill.log || [];
   // แถวละเมนู: แตะทั้งแถวเพื่อสลับ กิน/ไม่กิน; สั่งมากกว่า 1 และกินอยู่ → มีปุ่มจำนวนใต้แถวเลย
-  $('itemList').innerHTML = r.itemRows.map(({ item, shareSum, unassigned, over }) => {
+  $('itemList').innerHTML = r.itemRows.map(({ item, shareSum, unassigned }) => {
     const mine = shareOf(item, p);
     const inIt = mine > 0;
     const myAmount = inIt ? item.total * (mine / shareSum) : 0;
@@ -284,13 +279,11 @@ function renderItems(r) {
     const lastOther = log.findLast((e) => e.item === item.id && onBehalf(e));
     const sub = unassigned
       ? '<span class="warn-text">ยังไม่มีใครกิน</span>'
-      : over
-        ? `<span class="warn-text">ใส่รวม ${fmtShare(shareSum)} จาก ${fmtShare(item.qty)} มีคนต้องลด</span>`
-        : inIt
+      : inIt
           ? `คุณ ${baht(myAmount)} · หาร ${eaters} คน`
           : `${eaters} คนกิน`;
     return `
-      <article class="line${inIt ? ' in' : ''}${unassigned || over ? ' warn' : ''}" data-id="${item.id}">
+      <article class="line${inIt ? ' in' : ''}${unassigned ? ' warn' : ''}" data-id="${item.id}">
         <button class="line-main" data-act="toggle" aria-pressed="${inIt}" ${locked ? 'disabled' : ''}
           aria-label="${esc(item.name)} ${inIt ? 'กินอยู่ แตะเพื่อเอาชื่อออก' : 'ไม่ได้กิน แตะเพื่อกินด้วย'}">
           <span class="check" aria-hidden="true"></span>
@@ -437,7 +430,6 @@ async function toggleClosed() {
     const waiting = doneStatus(bill).waiting.filter((x) => x.id !== bill.payerId);
     if (waiting.length) issues.push(`${waiting.map((x) => x.name).join(', ')} ยังไม่กดเลือกเสร็จ`);
     if (r.unassigned.length) issues.push(`ยังมี ${r.unassigned.map((u) => u.item.name).join(', ')} ที่ไม่มีใครกิน (${baht(r.unassignedTotal)} บาท) ถ้าปิดตอนนี้ คุณต้องจ่ายส่วนนี้เอง`);
-    if (r.overItems.length) issues.push(`${r.overItems.map((it) => it.name).join(', ')} ใส่จำนวนรวมเกินที่สั่ง ยอดแต่ละคนอาจยังไม่ตรงกับที่กินจริง`);
     if (issues.length && !confirm(`${issues.join('\n\n')}\n\nปิดบิลเลยไหม?`)) return;
   }
   try {

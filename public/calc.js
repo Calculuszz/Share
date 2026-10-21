@@ -17,23 +17,13 @@ export function shareOf(item, person) {
 /**
  * ส่วนสูงสุดที่คนหนึ่งใส่ได้ = จำนวนที่สั่ง (สั่ง 8 ใส่ได้ไม่เกิน 8)
  * ไม่เอาส่วนของคนอื่นมาหัก เพราะคนที่ยังไม่ได้เข้ามามี 1 ส่วนอยู่แล้วโดยปริยาย
- * ถ้าหัก จะต้องรอคนอื่นมาเอาชื่อออกก่อนถึงจะกรอกได้ — ถ้ารวมแล้วเกิน ใช้ overCount เตือนแทน
+ * ถ้าหัก จะต้องรอคนอื่นมาเอาชื่อออกก่อนถึงจะกรอกได้
  */
 export function maxShareFor(item) {
   const qty = Number(item.qty);
   return Number.isFinite(qty) && qty >= 1 ? qty : 1;
 }
 
-/**
- * รายการที่มีคนใส่จำนวนชิ้น (เกิน 1) แล้วทุกคนรวมกันเกินจำนวนที่สั่ง → ต้องมีคนลด
- * ของแชร์แบบปกติ (ทุกคน 1 ส่วน เช่น เบียร์ 3 ขวดหาร 4 คน) ไม่นับว่าเกิน
- */
-export function overCount(item, people) {
-  const shares = people.map((p) => shareOf(item, p));
-  const sum = shares.reduce((s, v) => s + v, 0);
-  const qty = Number(item.qty) || 0;
-  return { sum, qty, over: shares.some((v) => v > 1) && sum > qty };
-}
 
 /** ตัดรหัสเมนูหน้าชื่อ เช่น "(C4) ไส้อ่อนทอด" → "ไส้อ่อนทอด", "R26 ข้าวผัด" → "ข้าวผัด" */
 export function cleanMenuName(name) {
@@ -75,7 +65,7 @@ export function computeBill(bill) {
     const shares = people.map((p) => [p, shareOf(item, p)]);
     const shareSum = shares.reduce((s, [, v]) => s + v, 0);
     const isUnassigned = shareSum <= 0 && total !== 0;
-    itemRows.push({ item, shareSum, unassigned: isUnassigned, over: overCount(item, people).over });
+    itemRows.push({ item, shareSum, unassigned: isUnassigned });
     if (isUnassigned) { unassigned.push({ item }); continue; }
     if (shareSum <= 0) continue;
     for (const [p, v] of shares) {
@@ -103,7 +93,6 @@ export function computeBill(bill) {
 
   return {
     perPerson, itemRows, unassigned, unassignedTotal,
-    overItems: itemRows.filter((r) => r.over).map((r) => r.item),
     billTotal, assignedTotal,
     // ตัวเช็ค (req 3.6): ผลรวมยอดละเอียด ต้องเท่ายอดบิล
     balanced: Math.abs(assignedTotal - billTotal) < EPS,

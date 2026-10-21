@@ -44,11 +44,6 @@ test('ทั้ง flow ผ่าน URL ที่ถูก rewrite', async () =
   const over = await call(`/api/bills/${id}/share`, { method: 'PATCH', body: { personId: 'bbbbbbbb', itemId: 'item0001', share: 4, actorId: 'bbbbbbbb' } });
   assert.equal(over.status, 400);
   assert.equal(over.data.error, 'เบียร์ สั่งมา 3 ใส่ได้สูงสุด 3');
-  // ตอนนี้ เอ 1 + บี 3 = 4 > 3 → บิลถูกมาร์กว่าเกิน แต่ยอดเงินยังครบ
-  const { computeBill } = await import('../public/calc.js');
-  const mid = computeBill((await call(`/api/bills/${id}`)).data.bill);
-  assert.equal(mid.overItems.length, 1);
-  assert.equal(mid.balanced, true);
   // แต่เอ "กินด้วย" 1 ส่วนยังได้เสมอ (ลองเอาออกแล้วใส่กลับ)
   assert.equal((await call(`/api/bills/${id}/share`, { method: 'PATCH', body: { personId: 'aaaaaaaa', itemId: 'item0001', share: 0 } })).status, 200);
   assert.equal((await call(`/api/bills/${id}/share`, { method: 'PATCH', body: { personId: 'aaaaaaaa', itemId: 'item0001', share: null } })).status, 200);
