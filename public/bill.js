@@ -1,7 +1,7 @@
 // หน้าเพื่อนติ๊กรายการ (req 4) + สรุปยอดการโอน (req 3.5) + QR โอนเงิน
 // req 4.5: ไม่มี login — เลือกชื่อตัวเอง, แก้แทนคนอื่นได้ แต่ทุกการแก้ถูกบันทึกและแสดงให้ทุกคนเห็น
 import { api, baht, baht0, fmtShare, fmtPromptPay, esc, store, editKeyFor, toast, copyText, icons } from './common.js';
-import { computeBill, shareOf, checkSubtotal, maxShareFor, overCount, cleanMenuName } from './calc.js';
+import { computeBill, shareOf, checkSubtotal, maxShareFor, overCount, cleanMenuName, paidStatus } from './calc.js';
 
 const $ = (id) => document.getElementById(id);
 const billId = location.pathname.split('/')[2];
@@ -105,6 +105,9 @@ function describe(e) {
       if (e.from === 0) return self ? `${by} กิน ${item}` : `${by} ใส่ชื่อ <b>${who}</b> ใน ${item}`;
       return self ? `${by} กิน ${item} ×${fmtShare(e.to)}` : `${by} ใส่ว่า <b>${who}</b> กิน ${item} ×${fmtShare(e.to)}`;
     case 'mode': return `${by} เลือก${self ? ' ' : ` ให้ <b>${who}</b> `}"${e.to === 'pick' ? 'กินบางอย่าง' : 'กินทุกอย่าง'}"`;
+    case 'join': return `${by} เพิ่มชื่อตัวเองเข้าวง`;
+    case 'paid': return self ? `${by} บอกว่าโอนแล้ว ฿${baht0(e.amount)}` : `${by} บอกว่าได้เงินจาก <b>${who}</b> แล้ว ฿${baht0(e.amount)}`;
+    case 'unpaid': return self ? `${by} ยกเลิก "โอนแล้ว"` : `${by} ยกเลิก "โอนแล้ว" ของ <b>${who}</b>`;
     case 'items': return `${by} (คนจ่าย) แก้รายการในบิล`;
     case 'payment': return `${by} (คนจ่าย) เปลี่ยนเลขบัญชี/QR รับเงิน`;
     case 'close': return `${by} ปิดบิล`;
@@ -152,6 +155,7 @@ function render() {
 }
 
 function renderWho() {
+  $('joinForm').hidden = bill.closed;
   $('whoChips').innerHTML = bill.people.map((p) => `
     <button class="chip" data-who="${p.id}" aria-pressed="${p.id === meId}">${esc(p.name)}${p.id === bill.payerId ? ' <span class="badge">คนจ่าย</span>' : ''}</button>`).join('');
 }
@@ -162,6 +166,21 @@ $('whoChips').addEventListener('click', (e) => {
   store.set(`me:${billId}`, meId);
   picking = false;
   render();
+});
+$('joinForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const name = $('joinName').value.trim();
+  if (!name) return $('joinName').focus();
+  try {
+    const r = await api(`bills/${billId}/people`, { method: 'POST', body: { name } });
+    bill = tidy(r.bill);
+    meId = r.personId;
+    store.set(`me:${billId}`, meId);
+    picking = false;
+    $('joinName').value = '';
+    toast('เข้าวงแล้ว เอาของที่ไม่ได้กินออกได้เลย');
+    render();
+  } catch (err) { toast(err.message, true); }
 });
 $('navWho').addEventListener('click', () => { picking = true; render(); window.scrollTo({ top: 0 }); });
 
@@ -201,12 +220,10 @@ function renderMe(r) {
       </div>
       <div class="muted small" style="margin-top:18px">${isPayer ? 'ส่วนของคุณ' : `โอนให้ ${esc(nameOf(bill.payerId))}`}</div>
       <div class="big-price">฿${baht0(mine.pay)}</div>
-      ${isPayer ? `<div class="muted small">รอเพื่อนโอนคืน ฿${baht0(incoming)}</div>` : ''}
+      ${isPayer ? `<div class="muted small">${bill.closed ? `ได้คืนแล้ว ฿${baht0(received(r))} จาก ฿${baht0(incoming)}` : `รอเพื่อนโอนคืน ฿${baht0(incoming)}`}</div>` : ''}
       ${!isPayer && mine.pay > 0 ? (!bill.closed
         ? `<div class="wait-note">รอ${esc(nameOf(bill.payerId))}ปิดบิลก่อน ถึงจะโอนได้ ยอดยังเปลี่ยนได้ถ้ามีคนแก้</div>`
-        : hasPayment()
-          ? `<button class="btn block" data-qr="${p.id}" style="margin-top:16px">${icons.qr}<span>QR โอนเงิน ฿${baht0(mine.pay)}</span></button>`
-          : `<div class="muted small" style="margin-top:12px">${esc(nameOf(bill.payerId))} ยังไม่ได้ใส่เลขบัญชี ถามในกลุ่มก่อนนะ</div>`)
+        : myTransfer(r, p))
         : ''}
       ${isPayer && editKey && !bill.closed
         ? `<button class="btn block" data-close-bill style="margin-top:16px">${icons.lock}<span>ปิดบิล ให้เพื่อนโอน</span></button>
@@ -219,6 +236,8 @@ $('meCard').addEventListener('click', (e) => {
   const mode = e.target.closest('[data-mode]');
   if (mode) setMode(mode.dataset.mode);
   if (e.target.closest('[data-close-bill]')) toggleClosed();
+  if (e.target.closest('[data-paid-me]')) setPaid(meId, true);
+  if (e.target.closest('[data-paid-undo]')) setPaid(meId, false);
   const ack = e.target.closest('[data-ack]');
   if (ack) { store.set(`seen:${billId}:${meId}`, ack.dataset.ack); render(); }
 });
@@ -247,59 +266,63 @@ function renderItems(r) {
   const p = me();
   const locked = bill.closed;
   const log = bill.log || [];
+  // รายการแบบย่อ: แถวละเมนู แตะทั้งแถวเพื่อสลับ กิน/ไม่กิน — รายละเอียดอยู่ในปุ่ม ⌄
   $('itemList').innerHTML = r.itemRows.map(({ item, shareSum, unassigned, over }) => {
     const mine = shareOf(item, p);
     const inIt = mine > 0;
     const myAmount = inIt ? item.total * (mine / shareSum) : 0;
     const eaters = bill.people.map((x) => [x, shareOf(item, x)]).filter(([, v]) => v > 0);
-    const showStepper = inIt && (item.qty > 1 || mine !== 1);
+    const canCount = inIt && (item.qty > 1 || mine !== 1);
     const max = maxShareFor(item);
-    const counted = eaters.some(([, v]) => v > 1); // มีคนใส่จำนวนชิ้น → บอกว่ารวมแล้วเท่าไร
     const lastOther = log.findLast((e) => e.item === item.id && onBehalf(e));
     const open = expanded.has(item.id);
+    const sub = unassigned
+      ? '<span class="warn-text">ยังไม่มีใครกิน</span>'
+      : over
+        ? `<span class="warn-text">ใส่รวม ${fmtShare(shareSum)} จาก ${fmtShare(item.qty)} มีคนต้องลด</span>`
+        : inIt
+          ? `คุณ ${baht(myAmount)}${mine > 1 ? ` (×${fmtShare(mine)})` : ''} · หาร ${eaters.length} คน`
+          : `${eaters.length} คนกิน`;
     return `
-      <article class="item-card${inIt ? ' in' : ''}${unassigned || over ? ' orphan' : ''}" data-id="${item.id}">
-        <div class="row">
-          <div class="title">
-            <span class="qty-tag" aria-label="จำนวน ${fmtShare(item.qty)}">×${fmtShare(item.qty)}</span>
-            <div class="name">${esc(item.name)}</div>
-          </div>
-          <div class="total price">฿${baht(item.total)}</div>
-        </div>
-        <div class="meta">${unassigned
-          ? '<b style="color:var(--danger)">ยังไม่มีใครกิน</b>'
-          : inIt
-            ? `หาร ${eaters.length} คน · คุณจ่าย <b>${baht(myAmount)}</b>`
-            : `${eaters.length} คนกิน · คุณไม่ได้กิน`}${counted && item.qty > 1 && !over ? ` · ใส่แล้ว ${fmtShare(shareSum)}/${fmtShare(item.qty)}` : ''}</div>
-        ${over ? `<div class="over-note">ใส่รวม ${fmtShare(shareSum)} แต่สั่งมา ${fmtShare(item.qty)} มีคนต้องลด</div>` : ''}
-        ${showStepper ? '<div class="step-hint">กินกี่จาน กดเท่านั้น</div>' : ''}
-        <div class="eaters">${eaters.map(([x, v]) => `<span class="eater">${esc(x.name)}${v !== 1 ? ` ×${fmtShare(v)}` : ''}</span>`).join('')}</div>
-        ${lastOther ? `<div class="edited-by">✎ ${hhmm(lastOther.at)} ${describe(lastOther)}</div>` : ''}
-        ${open ? `
-          <div class="who-edit" role="group" aria-label="ใครกินรายการนี้">
-            ${bill.people.map((x) => `<button class="chip" data-person="${x.id}" aria-pressed="${shareOf(item, x) > 0}" ${locked ? 'disabled' : ''}>${esc(x.name)}${shareOf(item, x) > 1 ? ` ×${fmtShare(shareOf(item, x))}` : ''}</button>`).join('')}
-          </div>
-          ` : ''}
-        <div class="actions">
-          ${showStepper ? `
-            <div class="stepper sm" role="group" aria-label="คุณกินกี่ชิ้น">
-              <button data-act="dec" aria-label="ลด" ${locked || mine <= 1 ? 'disabled' : ''}>–</button>
-              <output>${fmtShare(mine)}</output>
-              <button data-act="inc" aria-label="เพิ่ม" ${locked || mine >= max ? 'disabled' : ''} title="${mine >= max ? `ครบ ${fmtShare(item.qty)} แล้ว` : ''}">+</button>
-            </div>` : ''}
-          <button class="btn" data-act="${inIt ? 'out' : 'in'}" ${locked ? 'disabled' : ''}>
-            ${inIt ? 'เอาชื่อออก' : `${icons.basket}<span>กินด้วย</span>`}
+      <article class="line${inIt ? ' in' : ''}${unassigned || over ? ' warn' : ''}" data-id="${item.id}">
+        <div class="line-row">
+          <button class="line-main" data-act="toggle" aria-pressed="${inIt}" ${locked ? 'disabled' : ''}
+            aria-label="${esc(item.name)} ${inIt ? 'กินอยู่ แตะเพื่อเอาชื่อออก' : 'ไม่ได้กิน แตะเพื่อกินด้วย'}">
+            <span class="check" aria-hidden="true"></span>
+            <span class="qty-tag">×${fmtShare(item.qty)}</span>
+            <span class="line-text">
+              <span class="name">${esc(item.name)}</span>
+              <span class="sub">${sub}${lastOther ? ` · ✎ ${esc(nameOf(lastOther.by))}แก้` : ''}</span>
+            </span>
+            <span class="price">฿${baht0(item.total)}</span>
           </button>
-          <button class="icon-btn round" data-act="who" aria-label="แก้รายชื่อคนกิน" aria-expanded="${open}" title="แก้รายชื่อคนกิน" style="${inIt ? 'background:rgba(0,0,0,.12);color:var(--ink)' : ''}">${icons.users}</button>
+          <button class="line-more" data-act="more" aria-expanded="${open}" aria-label="รายละเอียด ${esc(item.name)}">${icons.chevron}</button>
         </div>
+        ${open ? `
+          <div class="line-detail">
+            ${canCount ? `
+              <div class="count-row">
+                <span>กินกี่จาน กดเท่านั้น</span>
+                <div class="stepper sm" role="group" aria-label="คุณกินกี่จาน">
+                  <button data-act="dec" aria-label="ลด" ${locked || mine <= 1 ? 'disabled' : ''}>–</button>
+                  <output>${fmtShare(mine)}</output>
+                  <button data-act="inc" aria-label="เพิ่ม" ${locked || mine >= max ? 'disabled' : ''}>+</button>
+                </div>
+              </div>` : ''}
+            <div class="small" style="margin:4px 0 6px;opacity:.8">ใครกินบ้าง แตะชื่อเพื่อใส่หรือเอาออก</div>
+            <div class="who-edit" role="group" aria-label="ใครกิน ${esc(item.name)}">
+              ${bill.people.map((x) => { const v = shareOf(item, x); return `<button class="chip" data-person="${x.id}" aria-pressed="${v > 0}" ${locked ? 'disabled' : ''}>${esc(x.name)}${v > 1 ? ` ×${fmtShare(v)}` : ''}</button>`; }).join('')}
+            </div>
+            ${lastOther ? `<div class="edited-by">✎ ${hhmm(lastOther.at)} ${describe(lastOther)}</div>` : ''}
+          </div>` : ''}
       </article>`;
   }).join('') || '<div class="empty">ยังไม่มีรายการในบิล</div>';
 }
 
 $('itemList').addEventListener('click', (e) => {
-  const card = e.target.closest('[data-id]');
-  if (!card) return;
-  const id = card.dataset.id;
+  const row = e.target.closest('[data-id]');
+  if (!row) return;
+  const id = row.dataset.id;
   const item = bill.items.find((it) => it.id === id);
 
   const person = e.target.closest('[data-person]');
@@ -310,13 +333,13 @@ $('itemList').addEventListener('click', (e) => {
 
   const b = e.target.closest('[data-act]');
   if (!b || b.disabled) return;
-  if (b.dataset.act === 'who') {
+  if (b.dataset.act === 'more') {
     if (expanded.has(id)) expanded.delete(id); else expanded.add(id);
     return render();
   }
   const cur = shareOf(item, me());
-  const next = { in: 1, out: 0, inc: Math.min(cur + 1, maxShareFor(item)), dec: Math.max(1, cur - 1) }[b.dataset.act];
-  if (next === cur) return;
+  const next = { toggle: cur > 0 ? 0 : 1, inc: Math.min(cur + 1, maxShareFor(item)), dec: Math.max(1, cur - 1) }[b.dataset.act];
+  if (next === undefined || next === cur) return;
   setShare(id, meId, next);
 });
 
@@ -334,11 +357,12 @@ function renderSummary(r) {
       <details class="person-row${p.id === meId ? ' me' : ''}" style="display:block">
         <summary style="display:flex;align-items:center;gap:12px;cursor:pointer;list-style:none">
           <span class="avatar">${esc([...p.name.replace(/^[เแโใไ]/, '')][0] || '?')}</span>
-          <span class="who"><b>${esc(p.name)}</b><span class="muted small">${p.id === payer ? 'คนจ่าย · ไม่ต้องโอน' : `โอนให้ ${esc(nameOf(payer))}`}</span></span>
+          <span class="who"><b>${esc(p.name)}</b><span class="muted small">${p.id === payer ? 'คนจ่าย · ไม่ต้องโอน' : bill.closed ? paidPill(r, p.id) : `โอนให้ ${esc(nameOf(payer))}`}</span></span>
           <span class="pay price">฿${baht0(pp.pay)}<small>${baht(pp.exact)}</small></span>
         </summary>
         <div style="margin-top:12px;display:grid;gap:4px;color:var(--muted)">${lines || '<span class="small">ไม่ได้กินอะไรเลย</span>'}</div>
         ${canQr ? `<button class="btn sm ghost block" data-qr="${p.id}" style="margin-top:12px">${icons.qr}<span>เปิด QR ของ ${esc(p.name)}</span></button>` : ''}
+        ${editKey && bill.closed && p.id !== payer && pp.pay > 0 ? `<button class="btn sm ghost block" data-paid-toggle="${p.id}" style="margin-top:8px">${paidStatus(bill, r, p.id).paid ? 'ยังไม่ได้รับเงิน' : `ได้เงินจาก${esc(p.name)}แล้ว`}</button>` : ''}
       </details>`;
   }).join('');
 
@@ -358,7 +382,9 @@ function renderSummary(r) {
     <section class="card-yellow">
       <div class="muted small">${esc(nameOf(payer))} ออกเงินไปก่อน</div>
       <div class="big-price">฿${baht0(r.billTotal)}</div>
-      <div style="font-weight:600;margin-top:6px">รอรับคืนรวม ฿${baht0(incoming)} จาก ${r.transfers.length} คน</div>
+      <div style="font-weight:600;margin-top:6px">${bill.closed
+        ? `ได้คืนแล้ว ฿${baht0(received(r))} จาก ฿${baht0(incoming)} · โอนแล้ว ${r.transfers.filter((t) => paidStatus(bill, r, t.from).paid).length}/${r.transfers.length} คน`
+        : `รอรับคืนรวม ฿${baht0(incoming)} จาก ${r.transfers.length} คน`}</div>
       ${bill.payment?.promptpay ? `<div class="muted small" style="margin-top:4px">พร้อมเพย์ ${esc(fmtPromptPay(bill.payment.promptpay))}${bill.payment.name ? ` · ${esc(bill.payment.name)}` : ''}</div>` : ''}
       <button class="btn block" id="copySummary" style="margin-top:18px">${icons.share}<span>คัดลอกสรุปไปวางใน LINE</span></button>
     </section>
@@ -382,7 +408,7 @@ $('summaryView').addEventListener('click', async (e) => {
     const lines = [
       `🍺 ${bill.store || 'หารค่าเหล้า'}${bill.date ? ` (${bill.date})` : ''} รวม ${baht(r.billTotal)} บาท`,
       `โอนให้ ${nameOf(bill.payerId)}${pp ? ` พร้อมเพย์ ${fmtPromptPay(pp)}` : ''}${bill.payment?.name ? ` (${bill.payment.name})` : ''}`,
-      ...r.transfers.map((t) => `• ${nameOf(t.from)} ${baht0(t.amount)} บาท`),
+      ...r.transfers.map((t) => `• ${nameOf(t.from)} ${baht0(t.amount)} บาท${paidStatus(bill, r, t.from).paid ? ' ✓ โอนแล้ว' : ''}`),
       ...(r.unassigned.length ? [`⚠ ยังไม่มีคนกิน: ${r.unassigned.map((u) => u.item.name).join(', ')} (${baht(r.unassignedTotal)} บาท)`] : []),
       ...(bill.closed ? [] : ['(ยอดยังไม่สุดท้าย รอปิดบิลก่อนค่อยโอน)']),
       `ดูรายละเอียด/สแกน QR: ${location.href}`,
@@ -390,6 +416,8 @@ $('summaryView').addEventListener('click', async (e) => {
     toast((await copyText(lines.join('\n'))) ? 'คัดลอกสรุปแล้ว' : 'คัดลอกไม่ได้', false);
   }
   if (e.target.closest('#closeBtn')) toggleClosed();
+  const pt = e.target.closest('[data-paid-toggle]');
+  if (pt) setPaid(pt.dataset.paidToggle, !paidStatus(bill, computeBill(bill), pt.dataset.paidToggle).paid);
 });
 
 async function toggleClosed() {
@@ -407,6 +435,41 @@ async function toggleClosed() {
     bill = tidy(r.bill);
     wasClosed = bill.closed;
     toast(bill.closed ? 'ปิดบิลแล้ว เพื่อนโอนได้เลย' : 'เปิดบิลแล้ว แก้รายการต่อได้');
+    render();
+  } catch (err) { toast(err.message, true); }
+}
+
+// ---------- โอนแล้ว ----------
+const received = (r) => r.transfers.reduce((s, t) => {
+  const st = paidStatus(bill, r, t.from);
+  return s + (st.amount ? Math.min(st.amount, st.pay) : 0);
+}, 0);
+
+function paidPill(r, pid) {
+  const st = paidStatus(bill, r, pid);
+  if (st.paid) return `<span class="paid-pill">โอนแล้ว ${hhmm(st.at)}</span>`;
+  if (st.amount) return `<span class="paid-pill short">โอนไป ฿${baht0(st.amount)} ขาดอีก ฿${baht0(st.short)}</span>`;
+  return '<span class="paid-pill no">ยังไม่โอน</span>';
+}
+
+/** ส่วนโอนเงินในการ์ดของเพื่อน (หลังปิดบิล) */
+function myTransfer(r, p) {
+  const st = paidStatus(bill, r, p.id);
+  if (st.paid) {
+    return `<div class="paid-done"><span>โอนแล้ว ✓ ${hhmm(st.at)}</span><button class="link-ink" data-paid-undo>ยังไม่ได้โอน</button></div>`;
+  }
+  const note = st.amount ? `<div class="wait-note">โอนไปแล้ว ฿${baht0(st.amount)} ยอดใหม่ ฿${baht0(st.pay)} โอนเพิ่มอีก ฿${baht0(st.short)}</div>` : '';
+  const qr = hasPayment()
+    ? `<button class="btn block" data-qr="${p.id}" style="margin-top:16px">${icons.qr}<span>QR โอนเงิน ฿${baht0(st.short)}</span></button>`
+    : `<div class="muted small" style="margin-top:12px">${esc(nameOf(bill.payerId))} ยังไม่ได้ใส่เลขบัญชี ถามในกลุ่มก่อนนะ</div>`;
+  return `${note}${qr}<button class="btn block ghost-ink" data-paid-me style="margin-top:10px">โอนแล้ว</button>`;
+}
+
+async function setPaid(personId, paid) {
+  try {
+    const r = await api(`bills/${billId}/paid`, { method: 'PATCH', body: { personId, paid, actorId: meId } });
+    bill = tidy(r.bill);
+    toast(paid ? (personId === meId ? 'บอกคนจ่ายแล้วว่าโอนแล้ว' : `บันทึกว่าได้เงินจาก${nameOf(personId)}แล้ว`) : 'ยกเลิกแล้ว');
     render();
   } catch (err) { toast(err.message, true); }
 }
@@ -434,7 +497,7 @@ function renderSheet(r) {
   const box = document.querySelector('#sheet .sheet');
   if (!box) return;
   const pay = bill.payment || {};
-  const amount = r.perPerson[sheetFor]?.pay ?? 0;
+  const amount = paidStatus(bill, r, sheetFor).short;
   const both = pay.promptpay && pay.qrType;
   const src = sheetKind === 'promptpay'
     ? `/api/bills/${billId}/promptpay/${sheetFor}?v=${bill.version}`
@@ -462,7 +525,8 @@ function renderSheet(r) {
         <button class="btn sm" data-copy="${esc(pay.promptpay)}" style="flex:1">คัดลอกเลข ${esc(fmtPromptPay(pay.promptpay))}</button>
         <button class="btn sm" data-copy="${amount}" style="flex:none">คัดลอกยอด</button>
       </div>` : ''}
-    <p class="small muted" style="margin:14px 0 0;text-align:center">แคปหน้าจอไว้ แล้วสแกนจากรูปในแอปธนาคารก็ได้</p>`;
+    <p class="small muted" style="margin:14px 0 0;text-align:center">แคปหน้าจอไว้ แล้วสแกนจากรูปในแอปธนาคารก็ได้</p>
+    ${sheetFor === meId || editKey ? `<button class="btn block" data-paid-sheet style="margin-top:14px">${sheetFor === meId ? 'โอนแล้ว' : `ได้เงินจาก${esc(nameOf(sheetFor))}แล้ว`}</button>` : ''}`;
 }
 
 document.addEventListener('click', async (e) => {
@@ -473,6 +537,7 @@ document.addEventListener('click', async (e) => {
   if (e.target === sheet || e.target.closest('[data-close]')) return closeSheet();
   const kind = e.target.closest('[data-kind]');
   if (kind) { sheetKind = kind.dataset.kind; renderSheet(computeBill(bill)); }
+  if (e.target.closest('[data-paid-sheet]')) { const pid = sheetFor; closeSheet(); return setPaid(pid, true); }
   const cp = e.target.closest('[data-copy]');
   if (cp) toast((await copyText(cp.dataset.copy)) ? 'คัดลอกแล้ว' : 'คัดลอกไม่ได้');
 });

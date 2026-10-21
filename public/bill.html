@@ -29,6 +29,13 @@
     <section id="whoSection">
       <div class="section-title" style="margin-top:8px"><h2>คุณคือใคร?</h2></div>
       <div class="chips" id="whoChips"></div>
+      <form id="joinForm" class="card" style="margin-top:20px">
+        <label for="joinName" style="display:block;font-weight:600;margin-bottom:10px">ไม่มีชื่อคุณ? ใส่ชื่อแล้วเข้าวงเลย</label>
+        <div style="display:flex;gap:8px">
+          <input class="input" id="joinName" placeholder="ชื่อเล่นของคุณ" maxlength="30" autocomplete="off">
+          <button class="btn sm yellow" style="height:48px" type="submit">เข้าวง</button>
+        </div>
+      </form>
     </section>
 
     <nav class="tabs" role="tablist" id="tabs" hidden>

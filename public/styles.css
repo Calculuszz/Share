@@ -376,3 +376,62 @@ button { cursor: pointer; border: 0; background: none; padding: 0; }
 .on-dark .seg { background: var(--surface-2); }
 
 hr.sep { border: 0; border-top: 1px solid rgba(0, 0, 0, .12); margin: 16px 0; }
+
+/* ---------- รายการแบบย่อ (หน้าเพื่อน) ---------- */
+#itemList.items { gap: 8px; }
+.line {
+  background: var(--surface); border-radius: var(--radius-md);
+  border: 1px solid transparent; overflow: hidden;
+  transition: background .15s;
+}
+.line.in { background: #2c2a1f; border-color: rgba(245, 191, 0, .35); }
+.line.warn { border-color: var(--danger); }
+.line-row { display: flex; align-items: stretch; }
+.line-main {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px;
+  padding: 12px 6px 12px 12px; text-align: left; color: var(--text);
+}
+.line-main[disabled] { cursor: default; }
+.line .check {
+  flex: none; width: 24px; height: 24px; border-radius: 7px;
+  border: 2px solid var(--line); display: grid; place-items: center;
+}
+.line.in .check { background: var(--yellow); border-color: var(--yellow); }
+.line.in .check::after {
+  content: ''; width: 6px; height: 11px; margin-top: -2px;
+  border: solid var(--ink); border-width: 0 2.5px 2.5px 0; transform: rotate(45deg);
+}
+.line .qty-tag { min-width: 36px; height: 26px; font-size: 15px; }
+.line.in .qty-tag { background: var(--yellow); color: var(--ink); }
+.line-text { flex: 1; min-width: 0; display: grid; }
+.line .name { font-size: 16px; font-weight: 600; line-height: 1.35; }
+.line:not(.in) .name { color: var(--muted); }
+.line .sub { font-size: 13px; color: var(--muted); }
+.line.in .sub { color: #e8d48a; }
+.warn-text { color: var(--danger); font-weight: 600; }
+.line .price { flex: none; font-weight: 700; font-variant-numeric: tabular-nums; }
+.line:not(.in) .price { color: var(--muted); }
+.line-more {
+  flex: none; width: 44px; display: grid; place-items: center; color: var(--muted);
+  border-left: 1px solid rgba(255, 255, 255, .06);
+}
+.line-more svg { width: 20px; height: 20px; transition: transform .15s; }
+.line-more[aria-expanded="true"] svg { transform: rotate(180deg); }
+.line-detail { padding: 4px 12px 14px; border-top: 1px solid rgba(255, 255, 255, .06); }
+.count-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 10px 0 8px; font-size: 14px; }
+.line .who-edit { margin-top: 0; }
+.line .who-edit .chip[aria-pressed="true"] { background: var(--yellow); color: var(--ink); }
+
+/* ---------- โอนแล้ว ---------- */
+.paid-pill {
+  display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 6px;
+  background: rgba(61, 220, 132, .15); color: var(--ok);
+}
+.paid-pill.no { background: var(--surface-2); color: var(--muted); }
+.paid-pill.short { background: rgba(255, 107, 74, .15); color: var(--danger); }
+.paid-done {
+  margin-top: 16px; padding: 12px 14px; border-radius: 12px; background: rgba(0, 0, 0, .1);
+  display: flex; justify-content: space-between; align-items: center; gap: 10px; font-weight: 600;
+}
+.btn.ghost-ink { background: rgba(0, 0, 0, .12); color: var(--ink); }
+.link-ink { font-size: 14px; font-weight: 500; text-decoration: underline; color: inherit; }

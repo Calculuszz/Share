@@ -16,6 +16,7 @@ let state = {
   people: [], payerId: null, items: [],
 };
 let editKey = null;
+let knownPeople = []; // รายชื่อที่หน้านี้รู้จัก — ชื่อที่เพื่อนเพิ่มทีหลังจะไม่ถูกลบตอนบันทึก
 let savedId = null;
 let dirty = false;
 
@@ -54,6 +55,7 @@ async function init() {
         items: bill.items.map(({ overrides, ...it }) => ({ ...it, name: cleanMenuName(it.name) })),
       };
       savedId = editId;
+      knownPeople = bill.people.map((p) => p.id);
       payment.promptpay = bill.payment?.promptpay || '';
       payment.name = bill.payment?.name || '';
       payment.previewUrl = bill.payment?.qrType ? `/api/bills/${editId}/qr?v=${bill.payment.qrVersion}` : null;
@@ -106,7 +108,7 @@ function renderPeople() {
         ${esc(p.name)}${p.id === state.payerId ? ' <span class="badge">คนจ่าย</span>' : ''}
         <button type="button" class="x" data-remove="${p.id}" aria-label="ลบ ${esc(p.name)}">×</button>
       </span>`).join('')
-    : '<span class="muted small">ใส่ชื่อตัวเองก่อน แล้วค่อยใส่ชื่อเพื่อน</span>';
+    : '<span class="muted small">ใส่ชื่อตัวเองก่อน เพื่อนเพิ่มชื่อเองได้ตอนเปิดลิงก์</span>';
 }
 
 $('peopleChips').addEventListener('click', (e) => {
@@ -352,15 +354,21 @@ $('saveBtn').addEventListener('click', async () => {
   const body = {
     store: state.store, date: state.date, time: state.time, table: state.table,
     subtotal: parseNum(state.subtotal),
-    people: state.people, payerId: state.payerId,
+    people: state.people, payerId: state.payerId, knownPeople,
     items: validItems().map((it) => ({ id: it.id, qty: parseNum(it.qty), name: it.name, total: parseNum(it.total) })),
   };
   $('saveBtn').disabled = true;
   try {
     if (savedId) {
-      await api(`bills/${savedId}`, { method: 'PUT', body, key: editKey });
+      const r = await api(`bills/${savedId}`, { method: 'PUT', body, key: editKey });
+      // มีเพื่อนเพิ่มชื่อเข้ามาระหว่างแก้ → แสดงชื่อเขาด้วย
+      state.people = r.bill.people;
+      knownPeople = r.bill.people.map((p) => p.id);
+      renderPeople();
     } else {
       const r = await api('bills', { method: 'POST', body });
+      knownPeople = r.bill.people.map((p) => p.id);
+      state.people = r.bill.people;
       savedId = r.bill.id;
       editKey = r.editKey;
       saveEditKey(savedId, editKey);

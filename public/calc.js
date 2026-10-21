@@ -111,6 +111,18 @@ export function computeBill(bill) {
   };
 }
 
+/**
+ * สถานะการโอนของแต่ละคน (เทียบยอดตอนกด "โอนแล้ว" กับยอดตอนนี้)
+ * short > 0 = โอนไปแล้วแต่ยอดเพิ่มทีหลัง (คนจ่ายเปิดบิลแก้) ยังขาดอีก
+ */
+export function paidStatus(bill, result, personId) {
+  const mark = bill.paid?.[personId];
+  const pay = result.perPerson[personId]?.pay ?? 0;
+  if (!mark) return { paid: false, pay, short: pay };
+  const short = Math.max(0, pay - mark.amount);
+  return { paid: short === 0, pay, at: mark.at, amount: mark.amount, short };
+}
+
 /** เทียบผลรวมรายการกับ Subtotal ในบิล (req 5.2) — ห้ามปรับให้ตรงเอง แค่รายงานส่วนต่าง */
 export function checkSubtotal(items, subtotal) {
   const sum = itemsTotal(items);
