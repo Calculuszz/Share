@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1c1d21">
+  <title>หารค่าเหล้า</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="app" id="app">
+    <header class="topbar">
+      <a class="icon-btn" href="/" id="backBtn" aria-label="กลับ" hidden></a>
+      <div class="title">
+        <h1 id="pageTitle">หารค่าเหล้า</h1>
+        <div class="sub" id="pageSub">ใครกินอะไร จ่ายเท่านั้น</div>
+      </div>
+      <a class="icon-btn" id="viewBtn" aria-label="ดูหน้าติ๊กรายการ" hidden></a>
+    </header>
+
+    <!-- 1. สแกนบิล -->
+    <section class="scan-hero" id="scanCard">
+      <div class="scan-copy">
+        <h2>ถ่ายบิล<br>แล้วหารกัน</h2>
+        <p>ถ่ายให้เห็นทั้งใบ ตัวเลขชัด ๆ</p>
+      </div>
+      <input type="file" id="fileInput" accept="image/*" capture="environment" hidden>
+      <button class="btn yellow block" id="scanBtn"></button>
+      <p class="small" id="scanNote"></p>
+    </section>
+
+    <div id="notes"></div>
+
+    <!-- 2. คนในวง -->
+    <div class="section-title"><h2>คนในวง</h2><span class="muted small">แตะ ★ ที่ชื่อคนจ่าย</span></div>
+    <div class="card">
+      <div class="chips" id="peopleChips"></div>
+      <form id="addPersonForm" style="display:flex;gap:8px;margin-top:14px">
+        <input class="input" id="personName" placeholder="พิมพ์ชื่อเพื่อน แล้วกดเพิ่ม" maxlength="30" autocomplete="off">
+        <button class="btn sm yellow" style="height:48px" type="submit">เพิ่ม</button>
+      </form>
+    </div>
+
+    <!-- 3. รายการ -->
+    <div class="section-title"><h2>รายการในบิล</h2><span class="muted small" id="itemCount"></span></div>
+    <div id="itemRows"></div>
+    <button class="btn ghost block sm" id="addItemBtn" style="height:48px"></button>
+
+    <!-- 4. เทียบ Subtotal -->
+    <div class="section-title"><h2>ยอดตรงกับบิลไหม</h2></div>
+    <div class="card">
+      <div class="grid-2">
+        <div class="field">
+          <label for="subtotal">ยอดรวมในบิล</label>
+          <input class="input" id="subtotal" inputmode="decimal" placeholder="เช่น 1419">
+        </div>
+        <div class="field">
+          <label>รวมจากรายการข้างบน</label>
+          <div class="input" id="sumBox" style="display:flex;align-items:center;font-weight:700"></div>
+        </div>
+      </div>
+      <div id="checkResult" style="margin-top:14px"></div>
+    </div>
+
+    <!-- 5. ช่องทางรับเงิน -->
+    <div class="section-title"><h2>ให้เพื่อนโอนเข้าไหน</h2><span class="muted small">ใส่ครั้งเดียว ครั้งหน้าไม่ต้องใส่</span></div>
+    <div class="card" id="payCard">
+      <div class="field">
+        <label for="promptpay">พร้อมเพย์ (เบอร์มือถือ หรือเลขบัตรประชาชน)</label>
+        <input class="input" id="promptpay" inputmode="numeric" placeholder="เช่น 081-234-5678" maxlength="20" autocomplete="off">
+        <span class="small muted" id="ppHint">เพื่อนสแกนแล้วยอดขึ้นเลย ไม่ต้องพิมพ์เอง</span>
+      </div>
+      <div class="field" style="margin-top:14px">
+        <label for="payName">ชื่อบัญชี</label>
+        <input class="input" id="payName" maxlength="60" placeholder="ชื่อที่ขึ้นตอนเพื่อนโอน">
+      </div>
+      <div class="field" style="margin-top:14px">
+        <label>หรือแปะรูป QR จากแอปธนาคาร</label>
+        <div class="qr-upload" id="qrBox">
+          <img id="qrPreview" alt="QR รับเงิน" hidden>
+          <div style="display:grid;gap:8px;flex:1">
+            <button class="btn ghost sm" type="button" id="qrPick"></button>
+            <button class="btn ghost sm" type="button" id="qrRemove" hidden>เอารูปออก</button>
+          </div>
+        </div>
+        <input type="file" id="qrFile" accept="image/*" hidden>
+      </div>
+    </div>
+
+    <!-- 6. รายละเอียดบิล -->
+    <details class="card" id="metaCard">
+      <summary style="cursor:pointer;font-weight:600">ร้าน วันที่ โต๊ะ</summary>
+      <div style="display:grid;gap:12px;margin-top:14px">
+        <div class="field"><label for="store">ชื่อร้าน</label><input class="input" id="store" maxlength="120"></div>
+        <div class="grid-2">
+          <div class="field"><label for="date">วันที่</label><input class="input" id="date" type="date"></div>
+          <div class="field"><label for="time">เวลา</label><input class="input" id="time" type="time"></div>
+        </div>
+        <div class="field"><label for="table">โต๊ะ</label><input class="input" id="table" maxlength="20"></div>
+      </div>
+    </details>
+
+    <!-- 6. แชร์ -->
+    <section class="card-yellow" id="shareCard" hidden>
+      <div class="stock">บันทึกแล้ว</div>
+      <h2 style="margin:6px 0 4px;font-size:22px;font-weight:700">ส่งลิงก์นี้เข้ากลุ่ม</h2>
+      <p class="muted small" style="margin:0 0 14px">ให้ทุกคนกดชื่อตัวเอง แล้วเอาของที่ไม่ได้กินออก</p>
+      <div class="share-box">
+        <input class="input" id="shareUrl" readonly style="background:#fff3;color:var(--ink)">
+        <button class="btn sm" id="copyBtn">คัดลอก</button>
+      </div>
+      <button class="btn block" id="nativeShareBtn" style="margin-top:12px" hidden></button>
+    </section>
+  </main>
+
+  <div class="bottom">
+    <div class="bottom-inner">
+      <button class="btn yellow block" id="saveBtn" style="max-width:420px"></button>
+    </div>
+  </div>
+
+  <script type="module" src="/editor.js"></script>
+</body>
+</html>

@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1c1d21">
+  <title>หารค่าเหล้า</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="app">
+    <header class="topbar">
+      <a class="icon-btn" href="/" id="homeBtn" aria-label="สร้างบิลใหม่"></a>
+      <div class="title">
+        <h1 id="storeName">กำลังโหลด…</h1>
+        <div class="sub" id="billMeta"></div>
+      </div>
+      <a class="icon-btn" id="editBtn" aria-label="แก้รายการในบิล" hidden></a>
+      <button class="icon-btn" id="shareBtn" aria-label="แชร์ลิงก์"></button>
+    </header>
+
+    <div id="closedBanner"></div>
+
+    <!-- ฉันคือใคร -->
+    <section id="whoSection">
+      <div class="section-title" style="margin-top:8px"><h2>คุณคือใคร?</h2></div>
+      <div class="chips" id="whoChips"></div>
+    </section>
+
+    <nav class="tabs" role="tablist" id="tabs" hidden>
+      <button class="tab" role="tab" data-tab="items" aria-selected="true">ของที่กิน</button>
+      <button class="tab" role="tab" data-tab="summary" aria-selected="false">ใครโอนเท่าไร</button>
+    </nav>
+
+    <section id="itemsView" hidden>
+      <div id="meCard"></div>
+      <div id="warnings"></div>
+      <div class="items" id="itemList"></div>
+    </section>
+
+    <section id="summaryView" hidden></section>
+  </main>
+
+  <div class="bottom">
+    <div class="bottom-inner">
+      <button class="nav-pill" data-tab="items" aria-current="page"><span id="navMenuIco"></span>รายการ</button>
+      <button class="nav-pill" data-tab="summary"><span id="navSumIco"></span>สรุป</button>
+      <button class="nav-pill" id="navWho"><span id="navUserIco"></span><span id="navWhoName">ฉัน</span></button>
+    </div>
+  </div>
+
+  <script type="module" src="/bill.js"></script>
+</body>
+</html>

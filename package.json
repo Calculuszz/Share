@@ -1,0 +1,19 @@
+{
+  "name": "har-kha-lao",
+  "version": "1.0.0",
+  "private": true,
+  "description": "เว็บหารค่าข้าววงเหล้า",
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server.js",
+    "dev": "node --watch --env-file-if-exists=.env server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=22.9"
+  },
+  "dependencies": {
+    "@google/genai": "^2.30.0",
+    "qrcode": "^1.5.4"
+  }
+}
