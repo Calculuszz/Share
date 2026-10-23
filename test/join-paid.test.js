@@ -21,7 +21,7 @@ async function call(method, p, body, key) {
 }
 
 const items = [{ id: 'itemAAAA', qty: 1, name: 'เบียร์', total: 300 }];
-const created = await call('POST', '/api/bills', { subtotal: 300, people: [{ id: 'payerAAA', name: 'เอ' }], payerId: 'payerAAA', items });
+const created = await call('POST', '/api/bills', { subtotal: 300, pin: '4821', people: [{ id: 'payerAAA', name: 'เอ' }], payerId: 'payerAAA', items });
 const id = created.data.bill.id;
 const key = created.data.editKey;
 

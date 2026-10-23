@@ -23,7 +23,7 @@ test('ยังไม่ต่อ Redis → 503 พร้อมข้อคว�
   const res = fakeRes();
   // Vercel ใส่ body ที่ parse แล้วไว้ที่ req.body
   const req = { method: 'POST', url: '/api?__path=bills', headers: {}, body: {
-    people: [{ name: 'เอ' }], items: [{ name: 'เบียร์', total: 100 }], subtotal: 100,
+    people: [{ name: 'เอ' }], items: [{ name: 'เบียร์', total: 100 }], subtotal: 100, pin: '4821',
   } };
   await handler(req, res);
   console.error = origError;

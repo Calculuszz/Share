@@ -432,7 +432,10 @@ hr.sep { border: 0; border-top: 1px solid rgba(0, 0, 0, .12); margin: 16px 0; }
   background: rgba(61, 220, 132, .1); border-left: 3px solid var(--ok);
 }
 .done-card.is-done .small { color: var(--muted); }
-.done-card.is-done .link-ink { color: var(--text); flex: none; }
+.done-card.is-done .unlock-box { margin-top: 16px; padding: 14px; border-radius: 12px; background: rgba(0, 0, 0, .1); }
+.unlock-box .input { background: rgba(255, 255, 255, .85); color: var(--ink); }
+.pin-input { letter-spacing: .4em; font-size: 20px; font-weight: 700; text-align: center; max-width: 180px; }
+.link-ink { color: var(--text); flex: none; }
 .done-progress { margin-top: 16px; padding: 12px 14px; border-radius: 12px; background: rgba(0, 0, 0, .1); }
 .done-progress .small { opacity: .8; }
 .link-ink { font-size: 14px; font-weight: 500; text-decoration: underline; color: inherit; }

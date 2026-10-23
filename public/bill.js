@@ -1,6 +1,6 @@
 // หน้าเพื่อนติ๊กรายการ (req 4) + สรุปยอดการโอน (req 3.5) + QR โอนเงิน
 // req 4.5: ไม่มี login — เลือกชื่อตัวเอง, แก้แทนคนอื่นได้ แต่ทุกการแก้ถูกบันทึกและแสดงให้ทุกคนเห็น
-import { api, baht, baht0, fmtShare, fmtPromptPay, esc, store, editKeyFor, toast, copyText, icons } from './common.js';
+import { api, baht, baht0, fmtShare, fmtPromptPay, esc, store, editKeyFor, saveEditKey, toast, copyText, icons } from './common.js';
 import { computeBill, shareOf, checkSubtotal, maxShareFor, cleanMenuName, paidStatus, doneStatus } from './calc.js';
 
 const $ = (id) => document.getElementById(id);
@@ -241,6 +241,7 @@ function renderMe(r) {
       ${isPayer && editKey && bill.closed
         ? `<button class="btn block ghost-ink" data-close-bill style="margin-top:16px">${icons.lock}<span>ยกเลิกปิดบิล</span></button>
            <div class="muted small" style="margin-top:8px">ยกเลิกแล้วทุกคนแก้รายการได้อีกครั้ง และยังโอนไม่ได้จนกว่าจะปิดใหม่</div>` : ''}
+      ${isPayer && !editKey ? unlockBox() : ''}
       ${isPayer && !hasPayment() && editKey
         ? `<a class="btn block" href="/edit/${billId}" style="margin-top:16px">${icons.qr}<span>เพิ่ม QR รับเงิน</span></a>` : ''}
     </section>`;
@@ -343,10 +344,34 @@ $('doneBox').addEventListener('click', (e) => {
   if (done) toast(`บอก${nameOf(bill.payerId)}แล้วว่าเลือกเสร็จ`);
 });
 
+/** คนจ่ายเปิดจากเครื่องอื่น (เช่น ลิงก์จาก LINE) → ใส่รหัสเพื่อปิดบิล/แก้รายการ */
+function unlockBox() {
+  if (!bill.hasPin) {
+    return '<div class="wait-note">บิลนี้ยังไม่มีรหัสคนจ่าย ปิดบิลหรือแก้รายการได้จากเครื่องที่สร้างบิลเท่านั้น</div>';
+  }
+  return `<form class="unlock-box" data-unlock>
+      <div style="font-weight:600">เปิดจากเครื่องอื่นอยู่?</div>
+      <div class="small" style="opacity:.8;margin-bottom:8px">ใส่รหัสคนจ่ายเพื่อปิดบิลหรือแก้รายการ</div>
+      <div style="display:flex;gap:8px">
+        <input class="input pin-input" name="pin" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="••••" aria-label="รหัสคนจ่าย">
+        <button class="btn sm" style="height:48px" type="submit">ปลดล็อก</button>
+      </div>
+    </form>`;
+}
+$('meCard').addEventListener('submit', async (e) => {
+  if (!e.target.matches('[data-unlock]')) return;
+  e.preventDefault();
+  try {
+    const r = await api(`bills/${billId}/unlock`, { method: 'POST', body: { pin: e.target.pin.value } });
+    saveEditKey(billId, r.editKey);
+    location.reload();
+  } catch (err) { toast(err.message, true); }
+});
+
 /** ความคืบหน้าของวง (ให้คนจ่ายดู) */
 function doneProgress() {
   const st = doneStatus(bill);
-  if (st.all) return '<div class="done-progress all"><b>ทุกคนเลือกเสร็จแล้ว</b> ปิดบิลได้เลย</div>';
+  if (st.all) return `<div class="done-progress all"><b>ทุกคนเลือกเสร็จแล้ว</b>${editKey ? ' ปิดบิลได้เลย' : ''}</div>`;
   return `<div class="done-progress"><b>เลือกเสร็จแล้ว ${st.done.length}/${bill.people.length} คน</b><div class="small">รอ: ${st.waiting.map((p) => esc(p.name)).join(', ')}</div></div>`;
 }
 

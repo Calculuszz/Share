@@ -91,6 +91,19 @@
       </div>
     </div>
 
+    <!-- รหัสคนจ่าย -->
+    <section id="pinCard">
+      <div class="section-title"><h2>รหัสคนจ่าย</h2><span class="muted small">อย่าบอกเพื่อน</span></div>
+      <div class="card">
+        <div class="field">
+          <label for="pin">ตั้งรหัส 4–6 ตัวเลข</label>
+          <input class="input pin-input" id="pin" type="password" inputmode="numeric" autocomplete="new-password" maxlength="6" placeholder="••••">
+          <span class="small muted" id="pinHint">ไว้เปิดบิลนี้จากเครื่องอื่น เช่น ตอนกดลิงก์จาก LINE แล้วปิดบิลไม่ได้</span>
+        </div>
+        <button class="btn sm yellow" type="button" id="pinSave" style="margin-top:12px" hidden>ตั้งรหัส</button>
+      </div>
+    </section>
+
     <!-- 6. รายละเอียดบิล -->
     <details class="card" id="metaCard">
       <summary style="cursor:pointer;font-weight:600">ร้าน วันที่ โต๊ะ</summary>

@@ -30,7 +30,7 @@ const call = async (p, opts = {}) => {
 
 test('ทั้ง flow ผ่าน URL ที่ถูก rewrite', async () => {
   const created = await call('/api/bills', { method: 'POST', body: {
-    subtotal: 300, people: [{ id: 'aaaaaaaa', name: 'เอ' }, { id: 'bbbbbbbb', name: 'บี' }], payerId: 'aaaaaaaa',
+    subtotal: 300, pin: '4821', people: [{ id: 'aaaaaaaa', name: 'เอ' }, { id: 'bbbbbbbb', name: 'บี' }], payerId: 'aaaaaaaa',
     items: [{ id: 'item0001', qty: 3, name: '(D40) เบียร์', total: 300 }],
   } });
   assert.equal(created.status, 201);

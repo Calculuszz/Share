@@ -16,7 +16,8 @@ let state = {
   people: [], payerId: null, items: [],
 };
 let editKey = null;
-let knownPeople = []; // รายชื่อที่หน้านี้รู้จัก — ชื่อที่เพื่อนเพิ่มทีหลังจะไม่ถูกลบตอนบันทึก
+let knownPeople = [];
+let hasPin = false; // บิลนี้ตั้งรหัสคนจ่ายไว้แล้วหรือยัง // รายชื่อที่หน้านี้รู้จัก — ชื่อที่เพื่อนเพิ่มทีหลังจะไม่ถูกลบตอนบันทึก
 let savedId = null;
 let dirty = false;
 
@@ -42,8 +43,7 @@ async function init() {
     $('viewBtn').hidden = false;
     $('pageTitle').textContent = 'แก้บิล';
     if (!editKey) {
-      document.querySelector('.topbar').insertAdjacentHTML('afterend', `<div class="alert"><div><strong>บิลนี้แก้ได้เฉพาะคนที่สร้าง</strong><br>บอกคนจ่ายให้แก้ให้นะ</div></div>`);
-      $('saveBtn').disabled = true;
+      showUnlock();
       return;
     }
     try {
@@ -59,6 +59,7 @@ async function init() {
       payment.promptpay = bill.payment?.promptpay || '';
       payment.name = bill.payment?.name || '';
       payment.previewUrl = bill.payment?.qrType ? `/api/bills/${editId}/qr?v=${bill.payment.qrVersion}` : null;
+      hasPin = Boolean(bill.hasPin);
       if (bill.closed) toast('บิลนี้ปิดไปแล้ว เปิดบิลก่อนถึงจะแก้ได้', true);
     } catch (e) {
       toast(e.message, true);
@@ -202,18 +203,25 @@ function renderCheck() {
 
   let html = '';
   let canSave = false;
-  if (state.people.length === 0) html = alert('', 'ใส่ชื่อคนในวงก่อน');
-  else if (items.length === 0) html = alert('', 'ยังไม่มีรายการ');
-  else if (badRow >= 0) html = alert('', `รายการที่ ${state.items.indexOf(validItems()[badRow]) + 1} ราคาหรือจำนวนยังไม่ถูก`);
-  else if (r.subtotal === null) html = alert('info', 'ใส่ยอดรวมจากบิล จะได้รู้ว่ารายการครบไหม');
+  let blocked = 'ยอดยังไม่ตรงบิล'; // ข้อความบนปุ่มตอนยังบันทึกไม่ได้
+  if (state.people.length === 0) { html = alert('', 'ใส่ชื่อคนในวงก่อน'); blocked = 'ใส่ชื่อคนในวงก่อน'; }
+  else if (items.length === 0) { html = alert('', 'ยังไม่มีรายการ'); blocked = 'ใส่รายการก่อน'; }
+  else if (badRow >= 0) { html = alert('', `รายการที่ ${state.items.indexOf(validItems()[badRow]) + 1} ราคาหรือจำนวนยังไม่ถูก`); blocked = 'แก้ราคาหรือจำนวนก่อน'; }
+  else if (r.subtotal === null) { html = alert('info', 'ใส่ยอดรวมจากบิล จะได้รู้ว่ารายการครบไหม'); blocked = 'ใส่ยอดรวมจากบิลก่อน'; }
   else if (r.matches) { html = alert('ok', `<strong>ตรงกับบิลแล้ว</strong> ${baht(r.sum)} บาท`); canSave = true; }
   else {
     const missing = r.diff > 0;
     html = alert('', `<strong>ยอดยังไม่ตรงบิล ${missing ? 'ขาด' : 'เกิน'} ${baht(Math.abs(r.diff))} บาท</strong><br>
       ${missing ? 'น่าจะมีรายการตกหล่น หรือราคาผิดสักบรรทัด' : 'น่าจะมีรายการซ้ำ หรือราคาผิดสักบรรทัด'}`);
   }
+  if (canSave && !savedId && !PIN_OK.test($('pin').value)) {
+    canSave = false;
+    blocked = 'ตั้งรหัสคนจ่ายก่อน';
+    html += `<div style="margin-top:10px">${alert('info', 'ตั้งรหัสคนจ่าย 4–6 ตัวเลขก่อน (อยู่ด้านล่าง)')}</div>`;
+  }
   if (canSave && !ppValid(payment.promptpay)) {
     canSave = false;
+    blocked = 'แก้เลขพร้อมเพย์ก่อน';
     html += `<div style="margin-top:10px">${alert('', 'เลขพร้อมเพย์ไม่ครบ แก้หรือลบออกก่อน')}</div>`;
   }
   $('checkResult').innerHTML = html;
@@ -222,7 +230,7 @@ function renderCheck() {
   save.disabled = !canSave || (editId && !editKey);
   save.innerHTML = canSave
     ? `${icons.share}<span>${savedId ? (dirty ? 'บันทึกการแก้ไข' : 'บันทึกแล้ว') : 'บันทึก แล้วส่งให้เพื่อน'}</span>`
-    : `<span>ยอดยังไม่ตรงบิล</span>`;
+    : `<span>${blocked}</span>`;
   if (savedId && !dirty) save.disabled = true;
   $('shareCard').hidden = !(savedId && canSave);
 }
@@ -303,7 +311,56 @@ async function savePayment(id, key) {
   renderPayment();
 }
 
+const PIN_OK = /^\d{4,6}$/;
+
+/** ช่องรหัส: บิลใหม่ต้องตั้ง, บิลเก่าที่ยังไม่มีรหัสตั้งได้, มีแล้วไม่ต้องโชว์ */
+function renderPin() {
+  const card = $('pinCard');
+  card.hidden = Boolean(savedId && hasPin);
+  $('pinSave').hidden = !savedId;
+  if (savedId && !hasPin) $('pinHint').textContent = 'บิลนี้ยังไม่มีรหัส ตั้งไว้จะได้เปิดจากเครื่องอื่นได้';
+}
+$('pin').addEventListener('input', (e) => {
+  e.target.value = e.target.value.replace(/\D/g, '').slice(0, 6);
+  renderCheck();
+});
+$('pinSave').addEventListener('click', async () => {
+  const pin = $('pin').value;
+  if (!PIN_OK.test(pin)) return toast('รหัสต้องเป็นตัวเลข 4–6 หลัก', true);
+  try {
+    await api(`bills/${savedId}/pin`, { method: 'PUT', body: { pin }, key: editKey });
+    hasPin = true;
+    $('pin').value = '';
+    toast('ตั้งรหัสคนจ่ายแล้ว');
+    renderPin();
+  } catch (e) { toast(e.message, true); }
+});
+
+/** เปิดหน้าแก้บิลจากเครื่องที่ไม่ได้สร้าง: ใส่รหัสคนจ่ายก่อน */
+function showUnlock() {
+  for (const el of document.querySelectorAll('main > :not(.topbar)')) el.hidden = true;
+  document.querySelector('.bottom').hidden = true;
+  document.querySelector('.topbar').insertAdjacentHTML('afterend', `
+    <form class="card" id="unlockForm" style="margin-top:8px">
+      <h2 style="margin:0 0 6px">ใส่รหัสคนจ่าย</h2>
+      <p class="muted small" style="margin:0 0 14px">เครื่องนี้ยังไม่รู้ว่าคุณเป็นคนจ่าย ใส่รหัสที่ตั้งไว้ตอนสร้างบิล</p>
+      <div style="display:flex;gap:8px">
+        <input class="input pin-input" id="unlockPin" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="••••">
+        <button class="btn sm yellow" style="height:48px" type="submit">ปลดล็อก</button>
+      </div>
+    </form>`);
+  $('unlockForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      const r = await api(`bills/${editId}/unlock`, { method: 'POST', body: { pin: $('unlockPin').value } });
+      saveEditKey(editId, r.editKey);
+      location.reload();
+    } catch (err) { toast(err.message, true); }
+  });
+}
+
 function renderAll() {
+  renderPin();
   renderPayment();
   renderMeta();
   renderPeople();
@@ -355,6 +412,7 @@ $('saveBtn').addEventListener('click', async () => {
     store: state.store, date: state.date, time: state.time, table: state.table,
     subtotal: parseNum(state.subtotal),
     people: state.people, payerId: state.payerId, knownPeople,
+    ...(savedId ? {} : { pin: $('pin').value }),
     items: validItems().map((it) => ({ id: it.id, qty: parseNum(it.qty), name: it.name, total: parseNum(it.total) })),
   };
   $('saveBtn').disabled = true;
@@ -367,6 +425,8 @@ $('saveBtn').addEventListener('click', async () => {
       renderPeople();
     } else {
       const r = await api('bills', { method: 'POST', body });
+      hasPin = true;
+      $('pin').value = '';
       knownPeople = r.bill.people.map((p) => p.id);
       state.people = r.bill.people;
       savedId = r.bill.id;
@@ -385,6 +445,7 @@ $('saveBtn').addEventListener('click', async () => {
     }
     dirty = false;
     toast('บันทึกแล้ว');
+    renderPin();
     renderCheck();
     renderShare();
     $('shareCard').scrollIntoView({ behavior: 'smooth' });
