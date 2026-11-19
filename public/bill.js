@@ -53,8 +53,8 @@ async function load() {
         if (meId && meId !== bill.payerId) toast(`${nameOf(bill.payerId)}ยกเลิกปิดบิล แก้รายการได้อีกครั้ง`);
       }
       wasClosed = bill.closed;
-      const allDone = doneStatus(bill).all;
-      if (wasAllDone === false && allDone && !bill.closed && meId === bill.payerId) toast('ทุกคนเลือกเสร็จแล้ว ปิดบิลได้เลย');
+      const allDone = friendsDone().all;
+      if (wasAllDone === false && allDone && !bill.closed && meId === bill.payerId) toast('เพื่อนเลือกครบแล้ว ปิดบิลได้เลย');
       wasAllDone = allDone;
       render();
     }
@@ -211,10 +211,7 @@ const hasPayment = () => Boolean(bill.payment?.promptpay || bill.payment?.qrType
 
 function renderMe(r) {
   const p = me();
-  const mine = r.perPerson[p.id];
   const isPayer = p.id === bill.payerId;
-  const eaten = bill.items.filter((it) => shareOf(it, p) > 0).length;
-  const incoming = r.transfers.reduce((s, t) => s + t.amount, 0);
 
   // มีคนอื่นแก้ของเราตั้งแต่ครั้งล่าสุดที่กด "รับทราบ"
   const seen = store.get(`seen:${billId}:${p.id}`, '');
@@ -230,40 +227,111 @@ function renderMe(r) {
           <button class="btn sm ghost" data-goto="summary">ดูประวัติทั้งหมด</button>
         </div>
       </div></div>` : ''}
-    <section class="card-yellow">
-      <div class="row" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
-        <div>
-          <div style="font-size:24px;font-weight:600;letter-spacing:-0.02em;line-height:1.2">${esc(p.name)}</div>
-          <div class="stock" style="margin-top:6px">กิน ${eaten}/${bill.items.length} รายการ${!bill.closed && bill.done?.[p.id] ? ' · เลือกเสร็จแล้ว ✓' : ''}</div>
-        </div>
-        <div class="seg" role="group" aria-label="กินแบบไหน">
-          <button data-mode="normal" aria-pressed="${p.mode !== 'pick'}">กินทุกอย่าง</button>
-          <button data-mode="pick" aria-pressed="${p.mode === 'pick'}">กินบางอย่าง</button>
-        </div>
-      </div>
-      <div class="muted small" style="margin-top:18px">${isPayer ? 'ส่วนของคุณ' : `โอนให้ ${esc(nameOf(bill.payerId))}`}</div>
-      <div class="big-price">฿${baht0(mine.pay)}</div>
-      ${isPayer ? `<div class="muted small">${bill.closed ? `ได้คืนแล้ว ฿${baht0(received(r))} จาก ฿${baht0(incoming)}` : `รอเพื่อนโอนคืน ฿${baht0(incoming)}`}</div>` : ''}
-      ${!isPayer && mine.pay > 0 ? (!bill.closed
-        ? `<div class="wait-note">รอ${esc(nameOf(bill.payerId))}ปิดบิลก่อน ถึงจะโอนได้ ยอดยังเปลี่ยนได้ถ้ามีคนแก้</div>`
-        : myTransfer(r, p))
-        : ''}
-      ${isPayer && !bill.closed ? doneProgress() : ''}
-      ${isPayer && editKey && !bill.closed
-        ? `<button class="btn block" data-close-bill style="margin-top:16px">${icons.lock}<span>ปิดบิล ให้เพื่อนโอน</span></button>
-           <div class="muted small" style="margin-top:8px">ปิดแล้วจะแก้รายการไม่ได้ ยกเลิกได้ทีหลัง</div>` : ''}
-      ${isPayer && editKey && bill.closed
-        ? `<button class="btn block ghost-ink" data-close-bill style="margin-top:16px">${icons.lock}<span>ยกเลิกปิดบิล</span></button>
-           <div class="muted small" style="margin-top:8px">ยกเลิกแล้วทุกคนแก้รายการได้อีกครั้ง และยังโอนไม่ได้จนกว่าจะปิดใหม่</div>` : ''}
-      ${isPayer && !editKey ? unlockBox() : ''}
-      ${isPayer && !hasPayment() && editKey
-        ? `<a class="btn block" href="/edit/${billId}" style="margin-top:16px">${icons.qr}<span>เพิ่ม QR รับเงิน</span></a>` : ''}
-    </section>`;
+    ${isPayer ? payerCard(r) : friendCard(r, p)}`;
+  renderMineHead(r, p);
 }
-$('meCard').addEventListener('click', (e) => {
+
+/** เพื่อนในวง (ไม่รวมคนจ่าย) และใครเลือกเสร็จแล้ว — คนจ่ายไม่ต้องกดเสร็จก่อนปิดบิล */
+function friendsDone() {
+  const friends = bill.people.filter((x) => x.id !== bill.payerId);
+  const done = friends.filter((x) => bill.done?.[x.id]);
+  return { friends, done, all: friends.length > 0 && done.length === friends.length };
+}
+
+const initial = (name) => esc([...String(name).replace(/^[เแโใไ]/, '')][0] || '?');
+
+/** คนจ่าย: ก่อนปิดบิล = รอเพื่อนเลือก, หลังปิดบิล = รอเพื่อนโอน */
+function payerCard(r) {
+  if (!editKey) {
+    return `<section class="card-yellow status-card">
+      <h2 class="status-title">คุณเป็นคนจ่าย</h2>
+      ${unlockBox()}
+    </section>`;
+  }
+  if (!bill.closed) {
+    const { friends, done, all } = friendsDone();
+    const pct = friends.length ? Math.round((done.length / friends.length) * 100) : 0;
+    const rows = friends.map((x) => `
+      <li><span class="avatar">${initial(x.name)}</span><span class="who-name">${esc(x.name)}</span>
+        ${bill.done?.[x.id] ? '<span class="state ok">✓ เลือกเสร็จ</span>' : '<span class="state">ยังเลือกอยู่</span>'}</li>`).join('');
+    return `<section class="card-yellow status-card">
+      <h2 class="status-title">${!friends.length ? 'ส่งลิงก์ให้เพื่อนก่อน' : all ? 'เพื่อนเลือกครบแล้ว' : 'รอเพื่อนเลือกของที่กิน'}</h2>
+      ${friends.length ? `
+        <div class="progress" aria-hidden="true"><span style="width:${pct}%"></span></div>
+        <p class="status-sub">เลือกเสร็จ ${done.length} จาก ${friends.length} คน</p>
+        <ul class="people-status">${rows}</ul>`
+        : '<p class="status-sub">เพื่อนกดลิงก์แล้วเพิ่มชื่อตัวเองได้เลย</p>'}
+      <button class="btn block ${all ? 'yellow' : ''}" data-close-bill style="margin-top:16px">${icons.lock}<span>ปิดบิล ให้เพื่อนโอน</span></button>
+      <button class="btn block ghost" data-share-link style="margin-top:10px">${icons.share}<span>ส่งลิงก์ให้เพื่อน</span></button>
+      <p class="status-note">ปิดบิลแล้วเพื่อนจะเห็นยอดสุดท้ายกับ QR โอนเงิน</p>
+      ${!hasPayment() ? `<p class="status-note"><a class="link-ink" href="/edit/${billId}">ยังไม่ได้ใส่เลขบัญชีรับเงิน · ใส่เลย</a></p>` : ''}
+    </section>`;
+  }
+  const total = r.transfers.reduce((sum, t) => sum + t.amount, 0);
+  const got = received(r);
+  const pct = total ? Math.round((got / total) * 100) : 100;
+  const rows = r.transfers.map((t) => {
+    const st = paidStatus(bill, r, t.from);
+    return `<li><span class="avatar">${initial(nameOf(t.from))}</span>
+      <span class="who-name">${esc(nameOf(t.from))}<span class="who-amount">฿${baht0(t.amount)}</span></span>
+      ${st.paid ? '<span class="state ok">✓ โอนแล้ว</span>'
+        : `<button class="btn sm ghost" data-paid-toggle="${t.from}">${st.amount ? `ขาด ฿${baht0(st.short)} · ได้แล้ว` : 'ได้เงินแล้ว'}</button>`}</li>`;
+  }).join('');
+  return `<section class="card-yellow status-card">
+    <h2 class="status-title">${got >= total ? 'ได้เงินคืนครบแล้ว' : 'รอเพื่อนโอนคืน'}</h2>
+    <div class="big-price">฿${baht0(got)} <span class="of">จาก ฿${baht0(total)}</span></div>
+    <div class="progress" aria-hidden="true"><span style="width:${pct}%"></span></div>
+    ${rows ? `<ul class="people-status">${rows}</ul>` : '<p class="status-sub">ไม่มีใครต้องโอน</p>'}
+    <button class="link-ink status-undo" data-close-bill>ยกเลิกปิดบิล</button>
+  </section>`;
+}
+
+/** เพื่อน: ก่อนปิดบิล = ยอดตอนนี้ (ยังเปลี่ยนได้), หลังปิดบิล = โอนเลย */
+function friendCard(r, p) {
+  const mine = r.perPerson[p.id];
+  const payerName = esc(nameOf(bill.payerId));
+  if (!bill.closed) {
+    return `<section class="card-yellow status-card">
+      <p class="status-sub" style="margin:0">ยอดของคุณตอนนี้</p>
+      <div class="big-price">฿${baht0(mine.pay)}</div>
+      <p class="status-note">ยอดยังเปลี่ยนได้ จนกว่า${payerName}จะปิดบิล แล้วค่อยโอน</p>
+    </section>`;
+  }
+  if (mine.pay <= 0) {
+    return `<section class="card-yellow status-card"><h2 class="status-title">คุณไม่ต้องโอน</h2></section>`;
+  }
+  const st = paidStatus(bill, r, p.id);
+  return `<section class="card-yellow status-card">
+    <p class="status-sub" style="margin:0">โอนให้ ${payerName}</p>
+    <div class="big-price">฿${baht0(st.paid ? st.pay : st.short)}</div>
+    ${myTransfer(r, p)}
+  </section>`;
+}
+
+/** หัวข้อ "ของที่คุณกิน" + สลับ กินทุกอย่าง/บางอย่าง */
+function renderMineHead(r, p) {
+  const eaten = bill.items.filter((it) => shareOf(it, p) > 0).length;
+  const share = p.id === bill.payerId ? `<br>ส่วนของคุณ ฿${baht0(r.perPerson[p.id].pay)}` : '';
+  $('mineHead').innerHTML = `
+    <div>
+      <h2>ของที่คุณกิน</h2>
+      <p class="muted small">กิน ${eaten} จาก ${bill.items.length} รายการ${share}</p>
+    </div>
+    <div class="seg seg-sm" role="group" aria-label="กินแบบไหน">
+      <button data-mode="normal" aria-pressed="${p.mode !== 'pick'}">ทุกอย่าง</button>
+      <button data-mode="pick" aria-pressed="${p.mode === 'pick'}">บางอย่าง</button>
+    </div>`;
+}
+$('mineHead').addEventListener('click', (e) => {
   const mode = e.target.closest('[data-mode]');
   if (mode) setMode(mode.dataset.mode);
+});
+
+$('meCard').addEventListener('click', (e) => {
   if (e.target.closest('[data-close-bill]')) toggleClosed();
+  if (e.target.closest('[data-share-link]')) $('shareBtn').click();
+  const pt = e.target.closest('[data-paid-toggle]');
+  if (pt) setPaid(pt.dataset.paidToggle, true);
   if (e.target.closest('[data-paid-me]')) setPaid(meId, true);
   if (e.target.closest('[data-paid-undo]')) setPaid(meId, false);
   const ack = e.target.closest('[data-ack]');
@@ -355,7 +423,7 @@ $('itemList').addEventListener('click', (e) => {
 
 function renderDone() {
   const box = $('doneBox');
-  if (bill.closed) { box.innerHTML = ''; return; }
+  if (bill.closed || meId === bill.payerId) { box.innerHTML = ''; return; }
   box.innerHTML = bill.done?.[meId]
     ? `<div class="done-card is-done"><div><b>เลือกเสร็จแล้ว ✓</b><div class="small">แก้ต่อได้จนกว่า${esc(nameOf(bill.payerId))}จะปิดบิล</div></div><button class="link-ink" data-done="0">ขอแก้ต่อ</button></div>`
     : `<div class="done-card"><button class="btn yellow block" data-done="1">เลือกเสร็จแล้ว</button><div class="small muted" style="margin-top:8px;text-align:center">กดเมื่อติ๊กครบ ${esc(nameOf(bill.payerId))}จะได้รู้</div></div>`;
@@ -394,13 +462,6 @@ $('meCard').addEventListener('submit', async (e) => {
     location.reload();
   } catch (err) { toast(err.message, true); }
 });
-
-/** ความคืบหน้าของวง (ให้คนจ่ายดู) */
-function doneProgress() {
-  const st = doneStatus(bill);
-  if (st.all) return `<div class="done-progress all"><b>ทุกคนเลือกเสร็จแล้ว</b>${editKey ? ' ปิดบิลได้เลย' : ''}</div>`;
-  return `<div class="done-progress"><b>เลือกเสร็จแล้ว ${st.done.length}/${bill.people.length} คน</b><div class="small">รอ: ${st.waiting.map((p) => esc(p.name)).join(', ')}</div></div>`;
-}
 
 function renderSummary(r) {
   const payer = bill.payerId;

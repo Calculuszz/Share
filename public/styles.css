@@ -499,6 +499,43 @@ input[type="time"].input::-webkit-calendar-picker-indicator { opacity: 0.55; cur
 .wizard-nav .btn { transition: transform 0.22s cubic-bezier(0.3, 0.7, 0.4, 1), opacity 0.3s, background-color 0.3s; }
 .recheck-result { transition: background-color 0.3s, color 0.3s; }
 
+
+/* ---------- การ์ดสถานะ (หน้าบิล): ตามบทบาทและช่วงของบิล ---------- */
+.status-card { padding: 20px; }
+.status-title { margin: 0 0 12px; font-size: 22px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.3; }
+.status-sub { margin: 8px 0 0; font-size: 14px; color: var(--muted); }
+.status-note { margin: 12px 0 0; font-size: 13px; color: var(--muted); }
+.status-card .big-price .of { font-size: 16px; font-weight: 500; letter-spacing: 0; color: var(--muted); }
+.status-undo { display: block; margin: 16px auto 0; color: var(--muted); }
+/* แถบความคืบหน้า */
+.progress { height: 8px; border-radius: 99px; background: var(--surface2); overflow: hidden; margin-top: 12px; }
+.progress span {
+  display: block; height: 100%; border-radius: inherit; background: var(--brand);
+  transition: width 0.6s var(--ease);
+}
+/* รายชื่อเพื่อน + สถานะ */
+.people-status { list-style: none; margin: 14px 0 0; padding: 0; display: grid; }
+.people-status li {
+  display: flex; align-items: center; gap: 12px; min-height: 52px;
+  border-top: 1px solid var(--line);
+}
+.people-status .avatar {
+  width: 32px; height: 32px; border-radius: 999px; flex: none;
+  display: grid; place-items: center; font-size: 14px; font-weight: 600;
+  background: var(--surface2); color: var(--text);
+}
+.people-status .who-name { flex: 1; min-width: 0; font-weight: 500; display: flex; align-items: baseline; gap: 8px; }
+.people-status .who-amount { color: var(--muted); font-size: 14px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.people-status .state { flex: none; font-size: 13px; font-weight: 500; color: var(--muted); }
+.people-status .state.ok { color: var(--ok); }
+.people-status .btn.sm { height: 36px; padding: 0 14px; font-size: 14px; }
+
+/* หัวข้อ "ของที่คุณกิน" */
+.mine-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin: 26px 4px 10px; }
+.mine-head h2 { margin: 0; font-size: 17px; font-weight: 600; }
+.mine-head p { margin: 2px 0 0; }
+.seg.seg-sm button { height: 30px; padding: 0 10px; font-size: 13px; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
