@@ -1,4 +1,4 @@
-// หน้าคนจ่าย: สแกน/พิมพ์รายการ → เทียบ Subtotal → บันทึก → แชร์ลิงก์ (req 5.2)
+// หน้าคนจ่าย ทีละขั้น: รายการ (สแกน/พิมพ์) → Recheck ยอดรวม → คนในวง → รับเงิน → บันทึกแล้วแชร์ลิงก์ (req 5.2)
 import { api, baht, esc, store, editKeyFor, saveEditKey, toast, ask, prepareImage, IMAGE_ACCEPT, setupThemeButton, copyText, icons } from './common.js';
 import { checkSubtotal, cleanMenuName } from './calc.js';
 
@@ -16,8 +16,9 @@ let state = {
   people: [], payerId: null, items: [],
 };
 let editKey = null;
-let knownPeople = [];
-let hasPin = false; // บิลนี้ตั้งรหัสคนจ่ายไว้แล้วหรือยัง // รายชื่อที่หน้านี้รู้จัก — ชื่อที่เพื่อนเพิ่มทีหลังจะไม่ถูกลบตอนบันทึก
+let knownPeople = []; // รายชื่อที่หน้านี้รู้จัก — ชื่อที่เพื่อนเพิ่มทีหลังจะไม่ถูกลบตอนบันทึก
+let hasPin = false; // บิลนี้ตั้งรหัสคนจ่ายไว้แล้วหรือยัง
+let step = 1; // 1 รายการ, 2 Recheck, 3 คนในวง, 4 รับเงิน, 'done' ส่งลิงก์
 let savedId = null;
 let dirty = false;
 
@@ -47,7 +48,6 @@ async function init() {
     $('backBtn').hidden = false;
     $('viewBtn').href = `/b/${editId}`;
     $('viewBtn').hidden = false;
-    $('pageTitle').textContent = 'แก้บิล';
     if (!editKey) {
       showUnlock();
       return;
@@ -107,26 +107,41 @@ function persistDraft() {
   if (!editId) store.set(DRAFT_KEY, state);
 }
 
-// ---------- คนในวง ----------
+// ---------- คนในวง: คนจ่าย กับ เพื่อนที่ต้องโอนคืน แยกกัน ----------
+const payer = () => state.people.find((p) => p.id === state.payerId) || null;
+
 function renderPeople() {
-  $('peopleChips').innerHTML = state.people.length
-    ? state.people.map((p) => `
-      <span class="chip" aria-pressed="${p.id === state.payerId}">
-        <button type="button" data-payer="${p.id}" aria-label="ให้ ${esc(p.name)} เป็นคนจ่าย" title="ตั้งเป็นคนจ่าย">${p.id === state.payerId ? '★' : '☆'}</button>
-        ${esc(p.name)}${p.id === state.payerId ? ' <span class="badge">คนจ่าย</span>' : ''}
-        <button type="button" class="x" data-remove="${p.id}" aria-label="ลบ ${esc(p.name)}">×</button>
+  const p = payer();
+  if (document.activeElement !== $('payerName')) $('payerName').value = p?.name ?? '';
+  const friends = state.people.filter((x) => x.id !== state.payerId);
+  $('peopleChips').innerHTML = friends.length
+    ? friends.map((x) => `
+      <span class="chip">${esc(x.name)}
+        <button type="button" class="x" data-remove="${x.id}" aria-label="ลบ ${esc(x.name)}">×</button>
       </span>`).join('')
-    : '<span class="muted small">ใส่ชื่อตัวเองก่อน เพื่อนเพิ่มชื่อเองได้ตอนเปิดลิงก์</span>';
+    : '<span class="muted small">ยังไม่มี</span>';
 }
 
-$('peopleChips').addEventListener('click', (e) => {
-  const payer = e.target.closest('[data-payer]');
-  const rm = e.target.closest('[data-remove]');
-  if (payer) state.payerId = payer.dataset.payer;
-  if (rm) {
-    state.people = state.people.filter((p) => p.id !== rm.dataset.remove);
-    if (state.payerId === rm.dataset.remove) state.payerId = state.people[0]?.id ?? null;
+$('payerName').addEventListener('input', (e) => {
+  const name = e.target.value.trim().slice(0, 30);
+  let p = payer();
+  if (!p && name) {
+    p = { id: rid(), name, mode: 'normal' };
+    state.people.unshift(p);
+    state.payerId = p.id;
+  } else if (p) {
+    p.name = name;
   }
+  if (name) store.set('myName', name);
+  persistDraft();
+  renderCheck();
+});
+$('payerName').addEventListener('blur', renderPeople);
+
+$('peopleChips').addEventListener('click', (e) => {
+  const rm = e.target.closest('[data-remove]');
+  if (!rm) return;
+  state.people = state.people.filter((p) => p.id !== rm.dataset.remove);
   persistDraft();
   renderPeople();
   renderCheck();
@@ -134,12 +149,10 @@ $('peopleChips').addEventListener('click', (e) => {
 
 $('addPersonForm').addEventListener('submit', (e) => {
   e.preventDefault();
-  const names = $('personName').value.split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
+  const names = $('personName').value.split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
   for (const name of names) {
     if (state.people.some((p) => p.name === name)) { toast(`มีชื่อ "${name}" แล้ว`, true); continue; }
-    const p = { id: rid(), name: name.slice(0, 30), mode: 'normal' };
-    state.people.push(p);
-    if (!state.payerId) { state.payerId = p.id; store.set('myName', p.name); }
+    state.people.push({ id: rid(), name: name.slice(0, 30), mode: 'normal' });
   }
   $('personName').value = '';
   persistDraft();
@@ -201,46 +214,97 @@ function validItems() {
   return state.items.filter((it) => String(it.name).trim() || String(it.total).trim());
 }
 
-function renderCheck() {
+/** แต่ละขั้นพร้อมไปต่อหรือยัง และถ้ายัง เพราะอะไร (ข้อความบนปุ่ม) */
+function status() {
   const items = validItems().map((it) => ({ ...it, total: parseNum(it.total) }));
   const badRow = items.findIndex((it) => !Number.isFinite(it.total) || !Number.isFinite(parseNum(it.qty)));
   const sub = parseNum(state.subtotal);
   const r = checkSubtotal(items.map((it) => ({ total: Number.isFinite(it.total) ? it.total : 0 })), Number.isFinite(sub) ? sub : null);
-  $('sumBox').textContent = baht(r.sum);
+  const p = payer();
+  const why = {
+    1: items.length === 0 ? 'ใส่รายการก่อน'
+      : badRow >= 0 ? `รายการที่ ${state.items.indexOf(validItems()[badRow]) + 1} ราคาหรือจำนวนยังไม่ถูก` : null,
+    2: r.subtotal === null ? 'ใส่ยอดรวมท้ายบิลก่อน' : !r.matches ? 'ยอดยังไม่ตรงบิล' : null,
+    3: !p?.name ? 'ใส่ชื่อคนจ่ายก่อน'
+      : new Set(state.people.map((x) => x.name)).size !== state.people.length ? 'มีชื่อซ้ำกัน' : null,
+    4: !ppValid(payment.promptpay) ? 'เลขพร้อมเพย์ไม่ครบ'
+      : !savedId && !PIN_OK.test($('pin').value) ? 'ตั้งรหัสคนจ่ายก่อน' : null,
+  };
+  return { r, why, firstBad: [1, 2, 3, 4].find((n) => why[n]) ?? null };
+}
 
-  let html = '';
-  let canSave = false;
-  let blocked = 'ยอดยังไม่ตรงบิล'; // ข้อความบนปุ่มตอนยังบันทึกไม่ได้
-  if (state.people.length === 0) { html = alert('', 'ใส่ชื่อคนในวงก่อน'); blocked = 'ใส่ชื่อคนในวงก่อน'; }
-  else if (items.length === 0) { html = alert('', 'ยังไม่มีรายการ'); blocked = 'ใส่รายการก่อน'; }
-  else if (badRow >= 0) { html = alert('', `รายการที่ ${state.items.indexOf(validItems()[badRow]) + 1} ราคาหรือจำนวนยังไม่ถูก`); blocked = 'แก้ราคาหรือจำนวนก่อน'; }
-  else if (r.subtotal === null) { html = alert('info', 'ใส่ยอดรวมจากบิล จะได้รู้ว่ารายการครบไหม'); blocked = 'ใส่ยอดรวมจากบิลก่อน'; }
-  else if (r.matches) { html = alert('ok', `<strong>ตรงกับบิลแล้ว</strong> ${baht(r.sum)} บาท`); canSave = true; }
-  else {
+function renderCheck() {
+  const st = status();
+  const { r } = st;
+  $('sumBox').textContent = `฿${baht(r.sum)}`;
+  // Recheck: ห้ามปรับให้ตรงเอง แค่บอกส่วนต่าง (req 5.2)
+  let html;
+  if (r.subtotal === null) {
+    html = '<div class="recheck-result wait">ใส่ยอดรวมท้ายบิลด้านบน แล้วจะบอกว่าตรงกันไหม</div>';
+  } else if (r.matches) {
+    html = `<div class="recheck-result ok"><b>✓ ตรงกับบิล</b><span>รายการครบ ไปต่อได้เลย</span></div>`;
+  } else {
     const missing = r.diff > 0;
-    html = alert('', `<strong>ยอดยังไม่ตรงบิล ${missing ? 'ขาด' : 'เกิน'} ${baht(Math.abs(r.diff))} บาท</strong><br>
-      ${missing ? 'น่าจะมีรายการตกหล่น หรือราคาผิดสักบรรทัด' : 'น่าจะมีรายการซ้ำ หรือราคาผิดสักบรรทัด'}`);
-  }
-  if (canSave && !savedId && !PIN_OK.test($('pin').value)) {
-    canSave = false;
-    blocked = 'ตั้งรหัสคนจ่ายก่อน';
-    html += `<div style="margin-top:10px">${alert('info', 'ตั้งรหัสคนจ่าย 4–6 ตัวเลขก่อน (อยู่ด้านล่าง)')}</div>`;
-  }
-  if (canSave && !ppValid(payment.promptpay)) {
-    canSave = false;
-    blocked = 'แก้เลขพร้อมเพย์ก่อน';
-    html += `<div style="margin-top:10px">${alert('', 'เลขพร้อมเพย์ไม่ครบ แก้หรือลบออกก่อน')}</div>`;
+    html = `<div class="recheck-result bad">
+      <b>ยังไม่ตรง ${missing ? 'ขาด' : 'เกิน'} ฿${baht(Math.abs(r.diff))}</b>
+      <span>${missing ? 'น่าจะมีรายการตกหล่น หรือราคาผิดสักบรรทัด' : 'น่าจะมีรายการซ้ำ หรือราคาผิดสักบรรทัด'}</span>
+      <button class="btn sm ghost" type="button" data-go="1">กลับไปแก้รายการ</button>
+    </div>`;
   }
   $('checkResult').innerHTML = html;
-
-  const save = $('saveBtn');
-  save.disabled = !canSave || (editId && !editKey);
-  save.innerHTML = canSave
-    ? `${icons.share}<span>${savedId ? (dirty ? 'บันทึกการแก้ไข' : 'บันทึกแล้ว') : 'บันทึก แล้วส่งให้เพื่อน'}</span>`
-    : `<span>${blocked}</span>`;
-  if (savedId && !dirty) save.disabled = true;
-  $('shareCard').hidden = !(savedId && canSave);
+  renderNav(st);
 }
+
+// ---------- ทีละขั้น ----------
+function goTo(next) {
+  step = next;
+  for (const el of document.querySelectorAll('.step')) el.hidden = el.dataset.step !== String(step);
+  window.scrollTo({ top: 0 });
+  renderNav();
+}
+
+function renderNav(st = status()) {
+  for (const b of document.querySelectorAll('#steps [data-go]')) {
+    const n = Number(b.dataset.go);
+    b.classList.toggle('current', n === step);
+    b.classList.toggle('ok', !st.why[n] && n !== step);
+  }
+  const prev = $('prevBtn');
+  const next = $('nextBtn');
+  prev.hidden = step === 1 || step === 'done';
+  if (step === 'done') {
+    next.innerHTML = '<span>ดูหน้าบิล</span>';
+    next.classList.remove('not-ready');
+    return;
+  }
+  const last = step === 4;
+  const blocked = last ? st.why[st.firstBad] : st.why[step];
+  next.classList.toggle('not-ready', Boolean(blocked));
+  next.innerHTML = blocked ? `<span>${blocked}</span>`
+    : last ? `${icons.share}<span>${savedId ? 'บันทึกการแก้ไข' : 'บันทึก แล้วส่งให้เพื่อน'}</span>`
+      : '<span>ถัดไป</span>';
+}
+
+document.addEventListener('click', (e) => {
+  const go = e.target.closest('[data-go]');
+  if (go) goTo(Number(go.dataset.go));
+});
+$('prevBtn').addEventListener('click', () => goTo(step - 1));
+$('nextBtn').addEventListener('click', () => {
+  if (step === 'done') { location.href = `/b/${savedId}`; return; }
+  const st = status();
+  if (step < 4) {
+    if (st.why[step]) return toast(st.why[step], true);
+    return goTo(step + 1);
+  }
+  // ขั้นสุดท้าย: ถ้าขั้นก่อนหน้ายังไม่พร้อม พาไปขั้นนั้น
+  if (st.firstBad) {
+    toast(st.why[st.firstBad], true);
+    if (st.firstBad !== 4) goTo(st.firstBad);
+    return;
+  }
+  save();
+});
 
 function alert(kind, html) {
   return `<div class="alert ${kind}" style="margin:0"><div>${html}</div></div>`;
@@ -254,7 +318,6 @@ for (const f of ['store', 'date', 'time', 'table']) {
 function renderMeta() {
   for (const f of ['store', 'date', 'time', 'table']) $(f).value = state[f] || '';
   $('subtotal').value = state.subtotal ?? '';
-  $('pageSub').textContent = state.store ? `${state.store}${state.table ? ` · โต๊ะ ${state.table}` : ''}` : 'ใครกินอะไร จ่ายเท่านั้น';
 }
 
 // ---------- ช่องทางรับเงิน ----------
@@ -272,11 +335,7 @@ function renderPayment() {
   renderPpHint();
 }
 function renderPpHint() {
-  const ok = ppValid(payment.promptpay);
-  $('ppHint').textContent = ok
-    ? 'เพื่อนสแกนแล้วยอดขึ้นเลย ไม่ต้องพิมพ์เอง'
-    : 'ใส่เบอร์มือถือ 10 หลัก หรือเลขบัตร 13 หลัก';
-  $('ppHint').style.color = ok ? '' : 'var(--danger)';
+  $('ppHint').textContent = ppValid(payment.promptpay) ? '' : 'ใส่เบอร์มือถือ 10 หลัก หรือเลขบัตร 13 หลัก';
 }
 function paymentChanged() {
   payDirty = true;
@@ -350,6 +409,7 @@ $('pinSave').addEventListener('click', async () => {
 /** เปิดหน้าแก้บิลจากเครื่องที่ไม่ได้สร้าง: ใส่รหัสคนจ่ายก่อน */
 function showUnlock() {
   for (const el of document.querySelectorAll('main > :not(.topbar)')) el.hidden = true;
+  $('steps').hidden = true;
   document.querySelector('.bottom').hidden = true;
   document.querySelector('.topbar').insertAdjacentHTML('afterend', `
     <form class="card" id="unlockForm" style="margin-top:8px">
@@ -415,7 +475,7 @@ async function scanFile(file, btn) {
     $('notes').innerHTML = r.notes ? alert('info', `<strong>เช็กตรงนี้หน่อย:</strong> ${esc(r.notes)}`) : '';
     persistDraft();
     renderAll();
-    toast(`ได้ ${r.items.length} รายการ ดูให้ตรงกับบิลด้วยนะ`);
+    toast(`ได้ ${r.items.length} รายการ ดูให้ตรงกับบิล แล้วกดถัดไป`);
     $('itemRows').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (err) {
     toast(err.message, true);
@@ -428,7 +488,7 @@ async function scanFile(file, btn) {
 }
 
 // ---------- บันทึก & แชร์ ----------
-$('saveBtn').addEventListener('click', async () => {
+async function save() {
   const body = {
     store: state.store, date: state.date, time: state.time, table: state.table,
     subtotal: parseNum(state.subtotal),
@@ -436,7 +496,9 @@ $('saveBtn').addEventListener('click', async () => {
     ...(savedId ? {} : { pin: $('pin').value }),
     items: validItems().map((it) => ({ id: it.id, qty: parseNum(it.qty), name: it.name, total: parseNum(it.total) })),
   };
-  $('saveBtn').disabled = true;
+  const next = $('nextBtn');
+  next.disabled = true;
+  next.innerHTML = '<span class="spinner"></span><span>กำลังบันทึก…</span>';
   try {
     if (savedId) {
       const r = await api(`bills/${savedId}`, { method: 'PUT', body, key: editKey });
@@ -465,16 +527,16 @@ $('saveBtn').addEventListener('click', async () => {
       catch (e) { toast(`บันทึกบิลแล้ว แต่เลขบัญชี/QR ยังไม่ได้บันทึก: ${e.message}`, true); }
     }
     dirty = false;
-    toast('บันทึกแล้ว');
     renderPin();
-    renderCheck();
     renderShare();
-    $('shareCard').scrollIntoView({ behavior: 'smooth' });
+    goTo('done');
   } catch (e) {
     toast(e.message, true);
+  } finally {
+    next.disabled = false;
     renderCheck();
   }
-});
+}
 
 function renderShare() {
   if (!savedId) return;

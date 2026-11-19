@@ -435,3 +435,48 @@ input[type="time"].input::-webkit-calendar-picker-indicator { opacity: 0.55; cur
 
 /* ตอนสลับธีม: เปลี่ยนสีทุกอย่างพร้อมกัน */
 .theme-switching *, .theme-switching *::before, .theme-switching *::after { transition: none !important; }
+
+/* ---------- หน้าสร้างบิลแบบทีละขั้น ---------- */
+.steps { flex: 1; min-width: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.steps button {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 2px 0; color: var(--muted); font-size: 12px; font-weight: 500;
+}
+.steps .num {
+  width: 100%; height: 4px; border-radius: 99px; background: var(--surface2);
+  font-size: 0; transition: background-color 0.25s;
+}
+.steps button.ok .num { background: var(--brand); }
+.steps button.current { color: var(--text); }
+.steps button.current .num { background: var(--text); }
+.steps .lbl { white-space: nowrap; }
+
+.step-head { margin: 10px 2px 18px; }
+.step-head h1 { margin: 0 0 4px; font-size: 28px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.25; }
+.step-head p { margin: 0; font-size: 15px; }
+
+.role-label { display: block; font-size: 15px; font-weight: 600; }
+.role-label .small { font-weight: 400; margin-left: 6px; }
+
+/* Recheck: ยอดรวมท้ายบิลตัวใหญ่ */
+.recheck-total { display: block; padding: 16px 18px; cursor: text; }
+.recheck-total:focus-within { box-shadow: 0 0 0 2px rgba(14, 182, 242, 0.55); }
+.money-input { display: flex; align-items: baseline; gap: 6px; margin-top: 4px; }
+.money-input > span { font-size: 30px; font-weight: 500; }
+.money-input input {
+  flex: 1; min-width: 0; border: 0; outline: none; background: transparent;
+  font-size: 40px; font-weight: 600; letter-spacing: -0.03em; font-variant-numeric: tabular-nums;
+}
+.recheck-sum { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.recheck-sum .price { font-size: 18px; }
+.recheck-result { display: grid; gap: 4px; padding: 16px 18px; border-radius: 20px; font-size: 15px; }
+.recheck-result b { font-size: 18px; font-weight: 600; }
+.recheck-result.wait { background: var(--surface); color: var(--muted); }
+.recheck-result.ok { background: var(--ok-soft); color: var(--ok); }
+.recheck-result.bad { background: var(--danger-soft); color: var(--danger); }
+.recheck-result .btn { justify-self: start; margin-top: 8px; color: var(--text); }
+
+/* ปุ่ม ย้อนกลับ / ถัดไป */
+.wizard-nav .btn { flex: 1; }
+.wizard-nav #prevBtn { flex: 0 0 auto; padding: 0 20px; }
+.btn.not-ready { opacity: 0.55; }
