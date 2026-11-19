@@ -12,6 +12,11 @@ let meId = store.get(`me:${billId}`);
 let tab = 'items';
 let pending = 0;
 let picking = false; // กำลังเลือกชื่อใหม่
+// แอนิเมชัน: รายการขึ้นใหม่ทุก 4 วิ (ดึงข้อมูลสด) จึงเล่นเฉพาะตอนที่ควรเล่น ไม่ใช่ทุกครั้งที่วาด
+let listIntro = true; // เปิดหน้าครั้งแรก: รายการทยอยขึ้น
+let justToggled = null; // แถวที่เพิ่งกดติ๊ก: วงกลมเด้ง
+let lastListHtml = ''; // วาดรายการใหม่เฉพาะตอนที่เปลี่ยนจริง ไม่งั้นแอนิเมชันโดนตัดกลางทาง
+let tabSlide = null; // สลับแท็บ: 'anim-from-right' | 'anim-from-left'
 let sheetFor = null; // personId ที่เปิดแผ่น QR อยู่
 let wasClosed = null; // ไว้รู้ตอนคนจ่ายเพิ่งปิด/เปิดบิล
 let wasAllDone = null; // ไว้บอกคนจ่ายตอนทุกคนเพิ่งเลือกเสร็จครบ
@@ -86,6 +91,7 @@ function setShare(itemId, personId, value) {
   // ถ้าค่าเท่ากับค่าเริ่มต้นของโหมด ไม่ต้องเก็บ override
   const def = p.mode === 'pick' ? 0 : 1;
   const v = value === def ? null : value;
+  if (personId === meId) justToggled = itemId;
   mutate('share', { personId, itemId, share: v }, () => {
     item.overrides = { ...item.overrides };
     if (v === null) delete item.overrides[personId]; else item.overrides[personId] = v;
@@ -145,6 +151,13 @@ function render() {
   $('tabs').hidden = choosing;
   $('itemsView').hidden = choosing || tab !== 'items';
   $('summaryView').hidden = choosing || tab !== 'summary';
+  if (tabSlide) {
+    const view = tab === 'summary' ? $('summaryView') : $('itemsView');
+    view.classList.remove('anim-from-right', 'anim-from-left');
+    void view.offsetWidth;
+    view.classList.add(tabSlide);
+    tabSlide = null;
+  }
   document.querySelector('.bottom').hidden = choosing;
   $('navWhoName').textContent = me()?.name ?? 'ฉัน';
   for (const el of document.querySelectorAll('[data-tab]')) {
@@ -274,10 +287,13 @@ function renderWarnings(r) {
 
 function renderItems(r) {
   const p = me();
+  // เล่นครั้งเดียว: วาดรอบถัดไป (เช่น ตอนคำตอบจาก server กลับมา) ไม่เล่นซ้ำ
+  const intro = listIntro;
+  listIntro = false;
   const locked = bill.closed;
   const log = bill.log || [];
   // แถวละเมนู: แตะทั้งแถวเพื่อสลับ กิน/ไม่กิน; สั่งมากกว่า 1 และกินอยู่ → มีปุ่มจำนวนใต้แถวเลย
-  $('itemList').innerHTML = r.itemRows.map(({ item, shareSum, unassigned }) => {
+  const html = r.itemRows.map(({ item, shareSum, unassigned }, idx) => {
     const mine = shareOf(item, p);
     const inIt = mine > 0;
     const myAmount = inIt ? item.total * (mine / shareSum) : 0;
@@ -291,7 +307,7 @@ function renderItems(r) {
           ? `คุณ ${baht(myAmount)} · หาร ${eaters} คน`
           : `${eaters} คนกิน`;
     return `
-      <article class="line${inIt ? ' in' : ''}${unassigned ? ' warn' : ''}" data-id="${item.id}">
+      <article class="line${inIt ? ' in' : ''}${unassigned ? ' warn' : ''}${intro ? ' anim-rise' : ''}" data-id="${item.id}"${intro ? ` style="animation-delay:${Math.min(idx, 12) * 35}ms"` : ''}>
         <button class="line-main" data-act="toggle" aria-pressed="${inIt}" ${locked ? 'disabled' : ''}
           aria-label="${esc(item.name)} ${inIt ? 'กินอยู่ แตะเพื่อเอาชื่อออก' : 'ไม่ได้กิน แตะเพื่อกินด้วย'}">
           <span class="check" aria-hidden="true"></span>
@@ -313,6 +329,16 @@ function renderItems(r) {
           </div>` : ''}
       </article>`;
   }).join('') || '<div class="empty">ยังไม่มีรายการในบิล</div>';
+  if (html !== lastListHtml) {
+    $('itemList').innerHTML = html;
+    lastListHtml = html;
+  }
+  // เด้งวงกลมของแถวที่เพิ่งกด (ใส่ class หลังวาด จะได้ไม่โดนวาดทับตอนคำตอบจาก server กลับมา)
+  if (justToggled) {
+    const row = $('itemList').querySelector(`[data-id="${justToggled}"]`);
+    if (row) { row.classList.remove('toggled'); void row.offsetWidth; row.classList.add('toggled'); }
+    justToggled = null;
+  }
 }
 
 $('itemList').addEventListener('click', (e) => {
@@ -587,7 +613,9 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSheet
 document.addEventListener('click', (e) => {
   const t = e.target.closest('[data-tab], [data-goto]');
   if (!t) return;
-  tab = t.dataset.tab || t.dataset.goto;
+  const nextTab = t.dataset.tab || t.dataset.goto;
+  if (nextTab !== tab) tabSlide = nextTab === 'summary' ? 'anim-from-right' : 'anim-from-left';
+  tab = nextTab;
   render();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 });

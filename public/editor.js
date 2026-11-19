@@ -19,6 +19,7 @@ let editKey = null;
 let knownPeople = []; // รายชื่อที่หน้านี้รู้จัก — ชื่อที่เพื่อนเพิ่มทีหลังจะไม่ถูกลบตอนบันทึก
 let hasPin = false; // บิลนี้ตั้งรหัสคนจ่ายไว้แล้วหรือยัง
 let step = 1; // 1 รายการ, 2 Recheck, 3 คนในวง, 4 รับเงิน, 'done' ส่งลิงก์
+let reached = 1; // บิลใหม่: ขั้นไกลสุดที่ไปถึงแล้ว — ขั้นหลังจากนี้ยังกดข้ามไปไม่ได้
 let savedId = null;
 let dirty = false;
 
@@ -161,9 +162,12 @@ $('addPersonForm').addEventListener('submit', (e) => {
 });
 
 // ---------- รายการ ----------
+let animateRows = null; // 'last' = แถวที่เพิ่งเพิ่ม, 'all' = ผลสแกนใหม่ทั้งชุด
 function renderItems() {
+  const mode = animateRows;
+  animateRows = null;
   $('itemRows').innerHTML = state.items.map((it, i) => `
-    <div class="item-row${it.uncertain ? ' uncertain' : ''}" data-i="${i}">
+    <div class="item-row${it.uncertain ? ' uncertain' : ''}${mode === 'all' || (mode === 'last' && i === state.items.length - 1) ? ' anim-rise' : ''}" data-i="${i}"${mode === 'all' ? ` style="animation-delay:${Math.min(i, 12) * 40}ms"` : ''}>
       <input class="input" data-f="name" value="${esc(it.name)}" placeholder="ชื่อเมนู" aria-label="ชื่อเมนู">
       <label class="mini qty"><span>จำนวน</span><input class="input num" data-f="qty" inputmode="numeric" value="${esc(it.qty)}"></label>
       <label class="mini total"><span>ราคา</span><input class="input num" data-f="total" inputmode="decimal" value="${esc(it.total)}" placeholder="0"></label>
@@ -199,6 +203,7 @@ $('itemRows').addEventListener('click', (e) => {
 $('addItemBtn').addEventListener('click', () => {
   state.items.push(blankItem());
   persistDraft();
+  animateRows = 'last';
   renderItems();
   renderCheck();
   $('itemRows').lastElementChild?.querySelector('[data-f="name"]')?.focus();
@@ -213,6 +218,8 @@ const parseNum = (v) => {
 function validItems() {
   return state.items.filter((it) => String(it.name).trim() || String(it.total).trim());
 }
+
+let lastRecheck = null;
 
 /** แต่ละขั้นพร้อมไปต่อหรือยัง และถ้ายัง เพราะอะไร (ข้อความบนปุ่ม) */
 function status() {
@@ -251,16 +258,33 @@ function renderCheck() {
       <button class="btn sm ghost" type="button" data-go="1">กลับไปแก้รายการ</button>
     </div>`;
   }
+  const key = r.subtotal === null ? 'wait' : r.matches ? 'ok' : 'bad';
   $('checkResult').innerHTML = html;
+  if (key !== lastRecheck) { animate($('checkResult'), 'anim-pop'); lastRecheck = key; }
   renderNav(st);
 }
 
 // ---------- ทีละขั้น ----------
+const ORDER = { 1: 1, 2: 2, 3: 3, 4: 4, done: 5 };
 function goTo(next) {
+  if (next === step) return;
+  const forward = ORDER[next] > ORDER[step];
   step = next;
-  for (const el of document.querySelectorAll('.step')) el.hidden = el.dataset.step !== String(step);
+  if (typeof step === 'number') reached = Math.max(reached, step);
+  for (const el of document.querySelectorAll('.step')) {
+    const show = el.dataset.step === String(step);
+    el.hidden = !show;
+    if (show) animate(el, forward ? 'anim-from-right' : 'anim-from-left');
+  }
   window.scrollTo({ top: 0 });
   renderNav();
+}
+
+/** เล่นแอนิเมชันซ้ำได้: เอา class ออก บังคับวาดใหม่ แล้วใส่กลับ */
+function animate(el, cls) {
+  el.classList.remove('anim-from-right', 'anim-from-left', 'anim-rise', 'anim-pop');
+  void el.offsetWidth;
+  el.classList.add(cls);
 }
 
 function renderNav(st = status()) {
@@ -268,6 +292,7 @@ function renderNav(st = status()) {
     const n = Number(b.dataset.go);
     b.classList.toggle('current', n === step);
     b.classList.toggle('ok', !st.why[n] && n !== step);
+    b.disabled = !savedId && n > reached;
   }
   const prev = $('prevBtn');
   const next = $('nextBtn');
@@ -470,6 +495,7 @@ async function scanFile(file, btn) {
     const r = await api('scan', { method: 'POST', body: payload });
     if (!r.items.length) throw new Error(r.notes || 'อ่านรายการไม่ออก ถ่ายใหม่ให้เห็นทั้งใบนะ');
     state.items = r.items.map((it) => ({ id: rid(), qty: it.qty, name: it.name, total: it.total, uncertain: it.uncertain }));
+    animateRows = 'all';
     state.subtotal = r.subtotal ?? r.total ?? '';
     for (const f of ['store', 'date', 'time', 'table']) if (r[f]) state[f] = r[f];
     $('notes').innerHTML = r.notes ? alert('info', `<strong>เช็กตรงนี้หน่อย:</strong> ${esc(r.notes)}`) : '';
