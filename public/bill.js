@@ -1,6 +1,6 @@
 // หน้าเพื่อนติ๊กรายการ (req 4) + สรุปยอดการโอน (req 3.5) + QR โอนเงิน
 // req 4.5: ไม่มี login — เลือกชื่อตัวเอง, แก้แทนคนอื่นได้ แต่ทุกการแก้ถูกบันทึกและแสดงให้ทุกคนเห็น
-import { api, baht, baht0, fmtShare, fmtPromptPay, esc, store, editKeyFor, saveEditKey, toast, copyText, icons } from './common.js';
+import { api, baht, baht0, fmtShare, fmtPromptPay, esc, store, editKeyFor, saveEditKey, toast, ask, setupThemeButton, copyText, icons } from './common.js';
 import { computeBill, shareOf, checkSubtotal, maxShareFor, cleanMenuName, paidStatus, doneStatus } from './calc.js';
 
 const $ = (id) => document.getElementById(id);
@@ -17,6 +17,7 @@ let wasClosed = null; // ไว้รู้ตอนคนจ่ายเพิ�
 let wasAllDone = null; // ไว้บอกคนจ่ายตอนทุกคนเพิ่งเลือกเสร็จครบ
 
 $('homeBtn').innerHTML = icons.back;
+setupThemeButton($('themeBtn'));
 $('editBtn').innerHTML = icons.edit;
 $('shareBtn').innerHTML = icons.share;
 $('navMenuIco').innerHTML = icons.menu;
@@ -219,7 +220,7 @@ function renderMe(r) {
     <section class="card-yellow">
       <div class="row" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
         <div>
-          <div style="font-size:26px;font-weight:800;line-height:1.1">${esc(p.name)}</div>
+          <div style="font-size:24px;font-weight:600;letter-spacing:-0.02em;line-height:1.2">${esc(p.name)}</div>
           <div class="stock" style="margin-top:6px">กิน ${eaten}/${bill.items.length} รายการ${!bill.closed && bill.done?.[p.id] ? ' · เลือกเสร็จแล้ว ✓' : ''}</div>
         </div>
         <div class="seg" role="group" aria-label="กินแบบไหน">
@@ -461,13 +462,13 @@ async function toggleClosed() {
     const waiting = doneStatus(bill).waiting.filter((x) => x.id !== bill.payerId);
     if (waiting.length) issues.push(`${waiting.map((x) => x.name).join(', ')} ยังไม่กดเลือกเสร็จ`);
     if (r.unassigned.length) issues.push(`ยังมี ${r.unassigned.map((u) => u.item.name).join(', ')} ที่ไม่มีใครกิน (${baht(r.unassignedTotal)} บาท) ถ้าปิดตอนนี้ คุณต้องจ่ายส่วนนี้เอง`);
-    if (issues.length && !confirm(`${issues.join('\n\n')}\n\nปิดบิลเลยไหม?`)) return;
+    if (issues.length && !(await ask(`${issues.join('\n\n')}\n\nปิดบิลเลยไหม?`, { ok: 'ปิดบิลเลย' }))) return;
   } else {
     const paidNames = bill.people.filter((p) => bill.paid?.[p.id]).map((p) => p.name);
     const msg = paidNames.length
       ? `${paidNames.join(', ')} โอนแล้ว ถ้าแก้แล้วยอดเพิ่ม เขาจะเห็นว่าต้องโอนเพิ่มอีกเท่าไร\n\nยกเลิกปิดบิลไหม?`
       : 'ยกเลิกปิดบิล ให้ทุกคนแก้รายการได้อีกครั้งไหม?';
-    if (!confirm(msg)) return;
+    if (!(await ask(msg, { ok: 'ยกเลิกปิดบิล' }))) return;
   }
   try {
     const r = await api(`bills/${billId}/closed`, { method: 'PUT', body: { closed: closing }, key: editKey });
@@ -547,7 +548,7 @@ function renderSheet(r) {
         <div class="muted small">${esc(nameOf(sheetFor))} โอนให้ ${esc(nameOf(bill.payerId))}</div>
         <div class="big-price">฿${baht0(amount)}</div>
       </div>
-      <button class="icon-btn round" data-close aria-label="ปิด" style="background:var(--ink);color:var(--yellow);font-size:22px">×</button>
+      <button class="icon-btn" data-close aria-label="ปิด" style="background:var(--surface2);font-size:22px">×</button>
     </div>
     ${both ? `
       <div class="seg" role="group" aria-label="ชนิด QR" style="margin-top:12px">

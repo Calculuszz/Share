@@ -3,12 +3,15 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#1c1d21">
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f3f3ef">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0e0e0f">
+  <!-- ตั้งธีมก่อนวาดหน้า จะได้ไม่กะพริบสีผิด: จำต่อเครื่อง, ครั้งแรกตามโทรศัพท์ -->
+  <script>try{var t=localStorage.getItem('hkl-theme');if(t!=='light'&&t!=='dark'){t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'}document.documentElement.dataset.theme=t}catch(e){document.documentElement.dataset.theme='light'}</script>
   <title>หารค่าเหล้า</title>
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Google+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -21,6 +24,7 @@
       </div>
       <a class="icon-btn" id="editBtn" aria-label="แก้รายการในบิล" hidden></a>
       <button class="icon-btn" id="shareBtn" aria-label="แชร์ลิงก์"></button>
+      <button class="icon-btn" id="themeBtn" type="button"></button>
     </header>
 
     <div id="closedBanner"></div>

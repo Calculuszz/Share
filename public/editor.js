@@ -1,5 +1,5 @@
 // หน้าคนจ่าย: สแกน/พิมพ์รายการ → เทียบ Subtotal → บันทึก → แชร์ลิงก์ (req 5.2)
-import { api, baht, esc, store, editKeyFor, saveEditKey, toast, prepareImage, copyText, icons } from './common.js';
+import { api, baht, esc, store, editKeyFor, saveEditKey, toast, ask, prepareImage, IMAGE_ACCEPT, setupThemeButton, copyText, icons } from './common.js';
 import { checkSubtotal, cleanMenuName } from './calc.js';
 
 const $ = (id) => document.getElementById(id);
@@ -28,7 +28,13 @@ let payment = { promptpay: '', name: '', qr: undefined, previewUrl: null };
 let payDirty = false;
 
 // ---------- เริ่มต้น ----------
-$('scanBtn').innerHTML = `${icons.camera}<span>ถ่ายรูป / เลือกรูปบิล</span>`;
+const CAMERA_LABEL = `${icons.camera}<span>ถ่ายรูปบิล</span>`;
+const UPLOAD_LABEL = `${icons.upload}<span>เลือกรูปจากเครื่อง</span>`;
+$('cameraBtn').innerHTML = CAMERA_LABEL;
+$('scanBtn').innerHTML = UPLOAD_LABEL;
+$('fileInput').accept = IMAGE_ACCEPT;
+$('qrFile').accept = IMAGE_ACCEPT;
+setupThemeButton($('themeBtn'));
 $('addItemBtn').innerHTML = `${icons.plus}<span>เพิ่มรายการ</span>`;
 $('nativeShareBtn').innerHTML = `${icons.share}<span>ส่งเข้า LINE</span>`;
 $('backBtn').innerHTML = icons.back;
@@ -86,6 +92,7 @@ async function init() {
     const cfg = await api('config');
     if (!cfg.scanEnabled) {
       $('scanBtn').disabled = true;
+      $('cameraBtn').disabled = true;
       $('scanNote').textContent = 'ตอนนี้ถ่ายบิลไม่ได้ พิมพ์รายการเองด้านล่างไปก่อนนะ';
     }
   } catch { /* ใช้แบบพิมพ์เองต่อได้ */ }
@@ -283,8 +290,12 @@ $('qrFile').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   e.target.value = '';
   if (!file) return;
-  payment.qr = await prepareImage(file, 1000, 'image/png'); // PNG ให้ QR คม
-  if (payment.qr.image.length > 2_000_000) payment.qr = await prepareImage(file, 900, 'image/jpeg', 0.92);
+  try {
+    payment.qr = await prepareImage(file, 1000, 'image/png'); // PNG ให้ QR คม
+    if (payment.qr.image.length > 2_000_000) payment.qr = await prepareImage(file, 900, 'image/jpeg', 0.92);
+  } catch (err) {
+    return toast(err.message, true);
+  }
   payment.previewUrl = `data:${payment.qr.mimeType};base64,${payment.qr.image}`;
   renderPayment();
   paymentChanged();
@@ -370,23 +381,32 @@ function renderAll() {
 }
 
 // ---------- สแกน ----------
+$('cameraBtn').addEventListener('click', () => $('cameraInput').click());
 $('scanBtn').addEventListener('click', () => $('fileInput').click());
-$('fileInput').addEventListener('change', async (e) => {
-  const file = e.target.files[0];
-  e.target.value = '';
-  if (!file) return;
-  const hasItems = validItems().length > 0;
-  if (hasItems && !confirm('ลบรายการเดิม แล้วใช้รายการจากรูปนี้แทน?')) return;
+for (const [inputId, btnId] of [['cameraInput', 'cameraBtn'], ['fileInput', 'scanBtn']]) {
+  $(inputId).addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (file) scanFile(file, $(btnId));
+  });
+}
 
-  const btn = $('scanBtn');
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span><span>กำลังอ่านบิล…</span>';
+async function scanFile(file, btn) {
+  if (validItems().length > 0 && !(await ask('ลบรายการเดิม แล้วใช้รายการจากรูปนี้แทน?', { ok: 'ใช้รูปนี้' }))) return;
+
+  const original = btn.innerHTML;
+  const setLabel = (text) => { btn.innerHTML = `<span class="spinner"></span><span>${text}</span>`; };
+  $('cameraBtn').disabled = true;
+  $('scanBtn').disabled = true;
+  setLabel('กำลังเตรียมรูป…');
   // บิลยาวอาจใช้เวลาเกินครึ่งนาที บอกคนรอให้รู้ว่ายังทำงานอยู่
-  const slow = setTimeout(() => { btn.querySelector('span:last-child').textContent = 'บิลยาว รอแป๊บนะ…'; }, 15000);
+  let slow;
   try {
     // ส่งได้ไม่เกิน ~4.5MB (ข้อจำกัดของ Vercel) — ถ้ารูปยังใหญ่ ย่อลงอีกขั้น
-    let payload = await prepareImage(file);
+    let payload = await prepareImage(file, 2000, 'image/jpeg', 0.88, setLabel);
     if (payload.image.length > 3_000_000) payload = await prepareImage(file, 1500, 'image/jpeg', 0.8);
+    setLabel('กำลังอ่านบิล…');
+    slow = setTimeout(() => setLabel('บิลยาว รอแป๊บนะ…'), 15000);
     const r = await api('scan', { method: 'POST', body: payload });
     if (!r.items.length) throw new Error(r.notes || 'อ่านรายการไม่ออก ถ่ายใหม่ให้เห็นทั้งใบนะ');
     state.items = r.items.map((it) => ({ id: rid(), qty: it.qty, name: it.name, total: it.total, uncertain: it.uncertain }));
@@ -401,10 +421,11 @@ $('fileInput').addEventListener('change', async (e) => {
     toast(err.message, true);
   } finally {
     clearTimeout(slow);
-    btn.disabled = false;
-    btn.innerHTML = `${icons.camera}<span>ถ่ายรูป / เลือกรูปบิล</span>`;
+    $('cameraBtn').disabled = false;
+    $('scanBtn').disabled = false;
+    btn.innerHTML = original;
   }
-});
+}
 
 // ---------- บันทึก & แชร์ ----------
 $('saveBtn').addEventListener('click', async () => {

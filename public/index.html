@@ -3,12 +3,15 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#1c1d21">
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f3f3ef">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0e0e0f">
+  <!-- ตั้งธีมก่อนวาดหน้า จะได้ไม่กะพริบสีผิด: จำต่อเครื่อง, ครั้งแรกตามโทรศัพท์ -->
+  <script>try{var t=localStorage.getItem('hkl-theme');if(t!=='light'&&t!=='dark'){t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'}document.documentElement.dataset.theme=t}catch(e){document.documentElement.dataset.theme='light'}</script>
   <title>หารค่าเหล้า</title>
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Google+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -20,17 +23,19 @@
         <div class="sub" id="pageSub">ใครกินอะไร จ่ายเท่านั้น</div>
       </div>
       <a class="icon-btn" id="viewBtn" aria-label="ดูหน้าติ๊กรายการ" hidden></a>
+      <button class="icon-btn" id="themeBtn" type="button"></button>
     </header>
 
     <!-- 1. สแกนบิล -->
     <section class="scan-hero" id="scanCard">
-      <div class="scan-copy">
-        <h2>ถ่ายบิล<br>แล้วหารกัน</h2>
-        <p>ถ่ายให้เห็นทั้งใบ ตัวเลขชัด ๆ</p>
-      </div>
-      <input type="file" id="fileInput" accept="image/*" capture="environment" hidden>
-      <button class="btn yellow block" id="scanBtn"></button>
-      <p class="small" id="scanNote"></p>
+      <h2 class="hero-title">ถ่ายบิล แล้วหารกัน</h2>
+      <p class="muted">ถ่ายให้เห็นทั้งใบ ตัวเลขชัด ๆ เดี๋ยวรายการขึ้นให้เอง</p>
+      <!-- ปุ่มถ่ายรูปเปิดกล้องเลย ส่วนอีกปุ่มเลือกรูปที่ถ่ายไว้แล้วได้ (capture บังคับเปิดกล้องอย่างเดียว) -->
+      <input type="file" id="cameraInput" accept="image/*" capture="environment" hidden>
+      <input type="file" id="fileInput" hidden>
+      <button class="btn block" id="cameraBtn" type="button"></button>
+      <button class="btn ghost block" id="scanBtn" type="button"></button>
+      <p class="small muted" id="scanNote">รูป JPG, PNG หรือรูปจาก iPhone ก็ได้</p>
     </section>
 
     <div id="notes"></div>
@@ -87,7 +92,7 @@
             <button class="btn ghost sm" type="button" id="qrRemove" hidden>เอารูปออก</button>
           </div>
         </div>
-        <input type="file" id="qrFile" accept="image/*" hidden>
+        <input type="file" id="qrFile" hidden>
       </div>
     </div>
 
@@ -123,7 +128,7 @@
       <h2 style="margin:6px 0 4px;font-size:22px;font-weight:700">ส่งลิงก์นี้เข้ากลุ่ม</h2>
       <p class="muted small" style="margin:0 0 14px">ให้ทุกคนกดชื่อตัวเอง แล้วเอาของที่ไม่ได้กินออก</p>
       <div class="share-box">
-        <input class="input" id="shareUrl" readonly style="background:#fff3;color:var(--ink)">
+        <input class="input" id="shareUrl" readonly>
         <button class="btn sm" id="copyBtn">คัดลอก</button>
       </div>
       <button class="btn block" id="nativeShareBtn" style="margin-top:12px" hidden></button>
